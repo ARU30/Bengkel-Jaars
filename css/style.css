@@ -1,0 +1,110 @@
+/* Custom Styles for Bengkel Calculator & POS */
+
+:root {
+    --primary-color: #0284c7;
+    --accent-amber: #d97706;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Card hover animation */
+.service-card {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.service-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+}
+
+/* Thermal Receipt Styling */
+.thermal-receipt {
+    font-family: 'Courier New', Courier, monospace;
+    background: #ffffff;
+    color: #111827;
+    line-height: 1.35;
+}
+
+.receipt-dashed-line {
+    border-bottom: 1px dashed #4b5563;
+    margin: 8px 0;
+}
+
+.receipt-double-line {
+    border-bottom: 2px dashed #111827;
+    margin: 8px 0;
+}
+
+/* Print Rules - Optimised for 58mm / 80mm and A4 */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+
+    #print-receipt-section,
+    #print-receipt-section * {
+        visibility: visible;
+    }
+
+    #print-receipt-section {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100% !important;
+        max-width: 80mm !important;
+        margin: 0 auto;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+
+    .no-print {
+        display: none !important;
+    }
+
+    @page {
+        margin: 0;
+        size: auto;
+    }
+}
+
+/* Numeric input spinner remove */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none; 
+    margin: 0; 
+}
+input[type=number] {
+    -moz-appearance: textfield;
+}
+
+/* Smooth active state transitions */
+.tab-btn.active {
+    background-color: #0284c7;
+    color: #ffffff;
+    box-shadow: 0 4px 6px -1px rgba(2, 132, 199, 0.25);
+}
+
+.vehicle-btn.active {
+    border-color: #0284c7;
+    background-color: #f0f9ff;
+    color: #0369a1;
+}
+
+/* Glow effects for total bayar */
+.glow-card {
+    box-shadow: 0 0 25px -5px rgba(2, 132, 199, 0.15);
+}
