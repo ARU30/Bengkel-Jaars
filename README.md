@@ -54,6 +54,7 @@ Aplikasi ini dapat langsung dijalankan di browser tanpa perlu server, serta **10
      - **3 Kategori Utama:** Ban Sepeda Motor, Ban Mobil, dan Oli Kendaraan (Motor & Mobil).
      - **Filter & Pencarian Instan:** Filter cepat per kategori, chip filter merek (Michelin, Pirelli, IRC, Shell, Motul, Pertamina, Castrol, dll.), serta kolom pencarian langsung berdasarkan nama, ukuran, atau spesifikasi (misal: `90/80`, `10W-40`, `185/65`).
      - **Informasi Produk Lengkap:** Menampilkan foto produk berkualitas, badge merek, ukuran/spesifikasi teknis, harga jual resmi, label stok (Tersedia / Stok Terbatas / Habis), serta keterangan produk.
+     - **🔍 Tinjau Detail Produk (1-Klik):** Pengguna maupun admin dapat mengklik langsung kartu/foto produk untuk membuka modal tinjauan detail besar yang memuat foto resolusi tinggi, ukuran ban / SAE oli, rekomendasi kendaraan, harga resmi, serta tombol langsung tanya ke WhatsApp atau masukkan ke kasir.
      - **Tanya via WhatsApp (1-Klik):** Pelanggan atau staf dapat langsung bertanya ketersediaan ban atau oli ke WhatsApp bengkel dengan template pesan otomatis yang sudah memuat nama produk, spesifikasi, dan harganya.
      - **🛒 Integrasi Langsung ke Kasir POS:** Tombol *"+ Kasir"* pada setiap kartu katalog untuk memasukkan produk ban/oli langsung ke dalam nota transaksi aktif di mesin kasir tanpa perlu input manual.
    - **Manajemen Katalog oleh Admin (Mode Admin):**
@@ -66,6 +67,7 @@ Aplikasi ini dapat langsung dijalankan di browser tanpa perlu server, serta **10
 
 9. **🌐 Sinkronisasi Cloud Antar-Perangkat Otomatis (Vercel & Multi-Device Auto-Sync):**
    - **Otomatis Berubah di Semua Perangkat:** Saat Admin mengubah tarif layanan, menambah produk katalog (seperti ban IRC SS 570F), atau mengedit profil bengkel di laptop, sistem secara otomatis mengirimkan konfigurasi ke Cloud Vercel (`/api/sync`) atau database cloud.
+   - **Tampilan Khusus Admin:** Tombol & status Cloud Sync hanya ditampilkan untuk admin saat login (disembunyikan dari sistem pengguna umum agar tampilan pelanggan tetap bersih dan profesional).
    - **Perangkat Lain Tidak Perlu Mengulang Konfigurasi:** Saat HP kasir, tablet, atau laptop lain membuka aplikasi di Vercel, sistem otomatis menarik data terbaru di latar belakang (*background sync*) dan memperbarui penyimpanan lokal browser.
    - **📲 Bagikan Link via WhatsApp (1-Klik):** Admin dapat menyalin atau mengirimkan tautan sinkronisasi instan via WhatsApp ke HP kasir. Kasir cukup mengklik tautan tersebut sekali saja di HP mereka untuk langsung menerapkan seluruh tarif, produk katalog, dan profil tanpa perlu login admin.
    - **📷 Scan QR Code Sinkronisasi:** Kasir cukup mengarahkan kamera HP ke layar laptop admin untuk scan QR code sinkronisasi instan.

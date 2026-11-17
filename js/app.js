@@ -423,6 +423,7 @@ function updateCloudSyncIndicator(status, text) {
     const dot = document.getElementById('cloud-sync-dot');
     const label = document.getElementById('cloud-sync-text');
     const badge = document.getElementById('settings-cloud-sync-badge');
+    const btnSync = document.getElementById('btn-cloud-sync-status');
 
     if (dot) {
         if (status === 'syncing') {
@@ -438,6 +439,17 @@ function updateCloudSyncIndicator(status, text) {
     }
     if (badge && text) {
         badge.textContent = text;
+    }
+
+    // Pastikan tombol Cloud Sync di header hanya terlihat saat Admin login
+    if (btnSync) {
+        if (state.isAdmin) {
+            btnSync.classList.remove('hidden');
+            btnSync.classList.add('flex');
+        } else {
+            btnSync.classList.add('hidden');
+            btnSync.classList.remove('flex');
+        }
     }
 }
 
@@ -1481,13 +1493,22 @@ function renderCatalogProducts() {
 
         return `
             <div class="bg-white rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
-                <div>
+                <!-- Area Tinjau Produk yang Dapat Diklik -->
+                <div onclick="openCatalogDetailModal('${escapeHtml(item.id)}')" class="cursor-pointer" title="Klik untuk meninjau detail & spesifikasi lengkap produk">
                     <!-- Product Image Container -->
                     <div class="relative w-full aspect-4/3 bg-slate-100 overflow-hidden border-b border-slate-100 flex items-center justify-center">
                         <img src="${imgSrc}" alt="${escapeHtml(item.brand)} ${escapeHtml(item.name)}"
                             onerror="window.handleCatalogImgError(this, '${escapeHtml(item.category)}')"
                             class="w-full h-full object-cover group-hover:scale-105 transition-all duration-300">
                         
+                        <!-- Overlay Tombol Tinjau Detail saat Hover -->
+                        <div class="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/20 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+                            <span class="bg-white/95 text-slate-800 text-[11px] font-extrabold px-3 py-1.5 rounded-xl shadow-md border border-slate-200/80 flex items-center gap-1.5 transform translate-y-2 group-hover:translate-y-0 transition-all backdrop-blur-xs">
+                                <span>🔍</span>
+                                <span>Tinjau Produk</span>
+                            </span>
+                        </div>
+
                         <!-- Badges on Image -->
                         <div class="absolute top-2.5 left-2.5 flex items-center gap-1.5 flex-wrap">
                             <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-white/95 text-slate-800 shadow-xs backdrop-blur-xs border border-slate-200">
@@ -1510,7 +1531,7 @@ function renderCatalogProducts() {
                         <div class="flex items-start justify-between gap-1">
                             <div>
                                 <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">${escapeHtml(item.brand)}</span>
-                                <h4 class="font-extrabold text-sm text-slate-900 leading-snug line-clamp-1">${escapeHtml(item.name)}</h4>
+                                <h4 class="font-extrabold text-sm text-slate-900 leading-snug line-clamp-1 group-hover:text-blue-600 transition-colors">${escapeHtml(item.name)}</h4>
                             </div>
                         </div>
 
@@ -1532,13 +1553,13 @@ function renderCatalogProducts() {
                 <!-- Actions -->
                 <div class="p-3 bg-slate-50/70 border-t border-slate-100 flex flex-col gap-1.5">
                     <div class="flex items-center gap-1.5">
-                        <button type="button" onclick="inquireCatalogWhatsApp('${escapeHtml(item.id)}')"
+                        <button type="button" onclick="event.stopPropagation(); inquireCatalogWhatsApp('${escapeHtml(item.id)}')"
                             class="flex-1 py-2 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1 transition-all active:scale-95"
                             title="Tanya ketersediaan stok via WhatsApp">
                             <span>💬</span>
                             <span>Tanya WA</span>
                         </button>
-                        <button type="button" onclick="addCatalogItemToCart('${escapeHtml(item.id)}')"
+                        <button type="button" onclick="event.stopPropagation(); addCatalogItemToCart('${escapeHtml(item.id)}')"
                             class="py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1 transition-all active:scale-95"
                             title="Masukkan produk ini ke nota kasir saat ini">
                             <span>🛒</span>
@@ -1548,12 +1569,12 @@ function renderCatalogProducts() {
 
                     ${state.isAdmin ? `
                     <div class="flex items-center gap-1.5 pt-1.5 border-t border-slate-200/60">
-                        <button type="button" onclick="openEditCatalogModal('${escapeHtml(item.id)}')"
+                        <button type="button" onclick="event.stopPropagation(); openEditCatalogModal('${escapeHtml(item.id)}')"
                             class="flex-1 py-1.5 bg-white hover:bg-blue-50 text-blue-700 font-bold text-[11px] rounded-lg border border-slate-200 transition-all flex items-center justify-center gap-1">
                             <span>✏️</span>
                             <span>Edit</span>
                         </button>
-                        <button type="button" onclick="deleteCatalogItem('${escapeHtml(item.id)}')"
+                        <button type="button" onclick="event.stopPropagation(); deleteCatalogItem('${escapeHtml(item.id)}')"
                             class="px-2.5 py-1.5 bg-white hover:bg-rose-50 text-rose-600 font-bold text-[11px] rounded-lg border border-slate-200 transition-all flex items-center justify-center gap-1"
                             title="Hapus produk ini">
                             <span>🗑️</span>
@@ -1564,6 +1585,121 @@ function renderCatalogProducts() {
             </div>
         `;
     }).join('');
+}
+
+// --- MODAL TINJAU DETAIL PRODUK KATALOG (USER & ADMIN) ---
+function openCatalogDetailModal(itemId) {
+    const item = (state.catalog || []).find(p => p.id === itemId);
+    if (!item) return;
+
+    const modal = document.getElementById('modal-catalog-detail');
+    if (!modal) return;
+
+    // Foto produk
+    const imgEl = document.getElementById('detail-product-img');
+    const fallbackImg = getFallbackCatalogImage(item.category);
+    const imgSrc = (item.image && typeof item.image === 'string' && item.image.trim()) ? item.image : fallbackImg;
+    if (imgEl) {
+        imgEl.src = imgSrc;
+        imgEl.alt = `${item.brand} ${item.name}`;
+        imgEl.onerror = () => { imgEl.onerror = null; imgEl.src = fallbackImg; };
+    }
+
+    // Merek
+    const brandBadge = document.getElementById('detail-brand-badge');
+    const brandText = document.getElementById('detail-brand-text');
+    if (brandBadge) brandBadge.textContent = item.brand;
+    if (brandText) brandText.textContent = item.brand;
+
+    // Nama produk
+    const nameEl = document.getElementById('detail-name-text');
+    if (nameEl) nameEl.textContent = item.name;
+
+    // Spesifikasi teknis
+    const specEl = document.getElementById('detail-spec-text');
+    if (specEl) specEl.textContent = item.spec || '-';
+
+    // Harga
+    const priceEl = document.getElementById('detail-price-text');
+    if (priceEl) priceEl.textContent = formatRupiah(item.price);
+
+    // Deskripsi / Rekomendasi
+    const descEl = document.getElementById('detail-desc-text');
+    if (descEl) {
+        descEl.textContent = item.desc || 'Produk ban & oli original bergaransi resmi dari Bengkel JAARS. Melayani konsultasi pemilihan tipe yang sesuai dengan kendaraan Anda dan siap pasang langsung di bengkel.';
+    }
+
+    // Kategori
+    const catIcon = document.getElementById('detail-category-icon');
+    const catBadge = document.getElementById('detail-category-badge');
+    let catText = 'Ban Motor';
+    let catIconChar = '🛵';
+    let catClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+    if (item.category === 'ban-mobil') {
+        catText = 'Ban Mobil';
+        catIconChar = '🚗';
+        catClass = 'bg-blue-100 text-blue-800 border-blue-200';
+    } else if (item.category === 'oli-motor') {
+        catText = 'Oli Motor';
+        catIconChar = '🛢️';
+        catClass = 'bg-amber-100 text-amber-800 border-amber-200';
+    } else if (item.category === 'oli-mobil') {
+        catText = 'Oli Mobil';
+        catIconChar = '🛢️';
+        catClass = 'bg-cyan-100 text-cyan-800 border-cyan-200';
+    }
+    if (catIcon) catIcon.textContent = catIconChar;
+    if (catBadge) {
+        catBadge.textContent = catText;
+        catBadge.className = `px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${catClass}`;
+    }
+
+    // Status Stok
+    const stockBadge = document.getElementById('detail-stock-badge');
+    let sText = 'Ready Stok';
+    let sClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    if (item.stockStatus === 'limited') {
+        sText = 'Stok Terbatas';
+        sClass = 'bg-amber-50 text-amber-700 border-amber-200';
+    } else if (item.stockStatus === 'preorder') {
+        sText = 'Bisa Dipesan';
+        sClass = 'bg-blue-50 text-blue-700 border-blue-200';
+    }
+    if (stockBadge) {
+        stockBadge.textContent = sText;
+        stockBadge.className = `px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${sClass}`;
+    }
+
+    // Tombol WhatsApp
+    const btnWa = document.getElementById('detail-btn-wa');
+    if (btnWa) {
+        btnWa.onclick = () => inquireCatalogWhatsApp(itemId);
+    }
+
+    // Tombol Kasir
+    const btnCart = document.getElementById('detail-btn-cart');
+    if (btnCart) {
+        btnCart.onclick = () => {
+            addCatalogItemToCart(itemId);
+            closeModal();
+        };
+    }
+
+    // Tombol Edit Admin
+    const btnEditAdmin = document.getElementById('detail-btn-edit-admin');
+    if (btnEditAdmin) {
+        if (state.isAdmin) {
+            btnEditAdmin.classList.remove('hidden');
+            btnEditAdmin.onclick = () => {
+                closeModal();
+                openEditCatalogModal(itemId);
+            };
+        } else {
+            btnEditAdmin.classList.add('hidden');
+        }
+    }
+
+    modal.classList.remove('hidden');
 }
 
 function openAddCatalogModal() {
@@ -1755,6 +1891,7 @@ function addCatalogItemToCart(itemId) {
 }
 
 // Expose functions to window for onclick handlers
+window.openCatalogDetailModal = openCatalogDetailModal;
 window.openAddCatalogModal = openAddCatalogModal;
 window.openEditCatalogModal = openEditCatalogModal;
 window.deleteCatalogItem = deleteCatalogItem;
@@ -1780,6 +1917,7 @@ function updateAdminUI() {
     const btnLogin = document.getElementById('btn-admin-login');
     const barLoggedIn = document.getElementById('admin-logged-in-bar');
     const catalogToolbar = document.getElementById('catalog-admin-toolbar');
+    const btnCloudSync = document.getElementById('btn-cloud-sync-status');
 
     if (state.isAdmin) {
         if (navGroup) {
@@ -1792,6 +1930,10 @@ function updateAdminUI() {
             barLoggedIn.classList.add('flex');
         }
         if (catalogToolbar) catalogToolbar.classList.remove('hidden');
+        if (btnCloudSync) {
+            btnCloudSync.classList.remove('hidden');
+            btnCloudSync.classList.add('flex');
+        }
     } else {
         if (navGroup) {
             navGroup.classList.add('hidden');
@@ -1803,6 +1945,10 @@ function updateAdminUI() {
             barLoggedIn.classList.remove('flex');
         }
         if (catalogToolbar) catalogToolbar.classList.add('hidden');
+        if (btnCloudSync) {
+            btnCloudSync.classList.add('hidden');
+            btnCloudSync.classList.remove('flex');
+        }
 
         // Jika sedang berada di tab admin saat logout, kembalikan ke tab pos (kasir)
         if (state.activeTab !== 'pos' && state.activeTab !== 'catalog' && state.activeTab !== 'info') {
