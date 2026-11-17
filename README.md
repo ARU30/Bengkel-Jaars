@@ -35,7 +35,34 @@ Aplikasi ini dapat langsung dijalankan di browser tanpa perlu server, serta **10
    - Riwayat transaksi tersimpan otomatis di penyimpanan lokal browser (`localStorage`).
 
 5. **🏢 Pengaturan Profil Bengkel:**
-   - Ubah Nama Bengkel, Tagline, Nomor WhatsApp, Alamat, dan Pesan Kaki Struk sesuai bengkel Anda.
+   - Ubah Nama Bengkel, Tagline, Nomor WhatsApp, Email Resmi, Alamat, Jam Operasional, dan Pesan Kaki Struk sesuai bengkel Anda.
+
+6. **ℹ️ Menu Informasi Bengkel (Sistem Pengguna / User):**
+   - Tampilan menu informasi lengkap yang dapat diakses langsung oleh kasir maupun pelanggan tanpa perlu login Admin.
+   - Menyajikan informasi **Kontak & WhatsApp** (dengan tombol 1-klik chat WA & panggilan telepon), **Alamat Lengkap** (dengan tombol buka rute di Google Maps), **Email Resmi** (dengan tombol kirim email), serta **Jam Operasional** dengan indikator status Buka/Tutup secara *real-time*.
+   - Tombol salin 1-klik untuk nomor telepon, alamat fisik, dan alamat email ke clipboard.
+
+7. **🔐 Keamanan Akun Admin Berbasis Email & Password:**
+   - Akses menu penting (**Kelola Tarif**, **Laporan & Riwayat Keuangan**, serta **Profil Bengkel**) diproteksi dengan otentikasi **Alamat Email dan Kata Sandi** (bukan sekadar PIN angka biasa).
+   - Akun default awal: Email: `admin@jaarsgarage.com`, Password: `admin123`.
+   - Email login dan kata sandi dapat diganti sewaktu-waktu di tab Profil Bengkel.
+   - Dilengkapi tombol tampil/sembunyikan password (toggle view) demi kemudahan dan keamanan pengetikan.
+
+8. **📦 Katalog Ban Motor, Ban Mobil & Oli Kendaraan (User & Admin):**
+   - **Tampilan Pengguna (Publik / User):**
+     - Menu tab khusus **"Katalog Ban & Oli"** yang bebas diakses siapa saja tanpa perlu login.
+     - **3 Kategori Utama:** Ban Sepeda Motor, Ban Mobil, dan Oli Kendaraan (Motor & Mobil).
+     - **Filter & Pencarian Instan:** Filter cepat per kategori, chip filter merek (Michelin, Pirelli, IRC, Shell, Motul, Pertamina, Castrol, dll.), serta kolom pencarian langsung berdasarkan nama, ukuran, atau spesifikasi (misal: `90/80`, `10W-40`, `185/65`).
+     - **Informasi Produk Lengkap:** Menampilkan foto produk berkualitas, badge merek, ukuran/spesifikasi teknis, harga jual resmi, label stok (Tersedia / Stok Terbatas / Habis), serta keterangan produk.
+     - **Tanya via WhatsApp (1-Klik):** Pelanggan atau staf dapat langsung bertanya ketersediaan ban atau oli ke WhatsApp bengkel dengan template pesan otomatis yang sudah memuat nama produk, spesifikasi, dan harganya.
+     - **🛒 Integrasi Langsung ke Kasir POS:** Tombol *"+ Kasir"* pada setiap kartu katalog untuk memasukkan produk ban/oli langsung ke dalam nota transaksi aktif di mesin kasir tanpa perlu input manual.
+   - **Manajemen Katalog oleh Admin (Mode Admin):**
+     - Muncul banner kontrol admin ketika login sebagai Admin bengkel.
+     - **Tambah & Edit Produk:** Admin dapat menambah merek baru, nama tipe, kategori, spesifikasi teknis, harga jual, dan status stok.
+     - **Upload Foto Produk Mandiri:** Admin dapat mengunggah file foto dari galeri HP/laptop (dengan kompresi otomatis berbasis Canvas ~20-40KB sehingga hemat memori browser dan cepat) atau memasukkan URL gambar eksternal.
+     - **Fallback Gambar Cerdas:** Dilengkapi generator ilustrasi SVG dinamis per kategori produk jika tidak mengunggah foto fisik.
+     - **Hapus & Reset Master:** Admin dapat menghapus produk satuan atau mereset ke katalog default 17 produk rekomendasi kapan saja.
+     - **Backup & Restore:** Data katalog ban dan oli otomatis ikut tersimpan saat ekspor/impor file JSON bengkel.
 
 ---
 

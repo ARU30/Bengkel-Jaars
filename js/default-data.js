@@ -8,11 +8,18 @@ const DEFAULT_PROFILE = {
     tagline: "Layanan Tambal Ban, Bongkar Pasang & Cuci Mobil/Motor",
     address: "Jl. Tawang Sakti No.46, Tawangrejo, Kec. Kartoharjo, Kota Madiun, Jawa Timur 63113",
     phone: "085156696378",
+    email: "jaarsgarage.madiun@gmail.com",
+    operatingHours: "Senin - Minggu: 08.00 - 21.00 WIB",
     receiptFooter: "Terima kasih atas kunjungan Anda. Utamakan keselamatan berkendara!",
     bankName: "Bank BRI",
     bankAccount: "0062-01-001234-53-0",
     bankHolder: "Jaars Garage",
     qrisImage: "img/qris.jpeg"
+};
+
+const DEFAULT_ADMIN = {
+    email: "admin@jaarsgarage.com",
+    password: "admin123"
 };
 
 const DEFAULT_CATEGORIES = [
@@ -309,5 +316,203 @@ const DEFAULT_SERVICES = [
         priceMotor: 0,
         priceMobil: 15000,
         applicable: "mobil"
+    }
+];
+
+// --- MASTER DATA DEFAULT KATALOG BAN & OLI KENDARAAN ---
+const DEFAULT_CATALOG = [
+    // --- BAN MOTOR ---
+    {
+        id: "cat-bm-01",
+        category: "ban-motor",
+        brand: "Michelin",
+        name: "Pilot Street 2 Tubeless",
+        spec: "90/80-14 Matic",
+        price: 320000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1578844251758-2f71da64c96f?w=500&auto=format&fit=crop&q=80",
+        desc: "Daya cengkeram optimal di jalan basah dan kering, alur pembuangan air maksimal."
+    },
+    {
+        id: "cat-bm-02",
+        category: "ban-motor",
+        brand: "IRC",
+        name: "Enviro NR91 Tubeless",
+        spec: "80/90-14 Standar Matic",
+        price: 215000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500&auto=format&fit=crop&q=80",
+        desc: "Ban standar pabrikan Honda & Yamaha, hemat bahan bakar dan tahan lama."
+    },
+    {
+        id: "cat-bm-03",
+        category: "ban-motor",
+        brand: "Maxxis",
+        name: "Green Devil MA-G1 Tubeless",
+        spec: "90/80-17 Bebek / Sport",
+        price: 345000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=500&auto=format&fit=crop&q=80",
+        desc: "Compound soft medium untuk cornering stabil dan manuver lincah."
+    },
+    {
+        id: "cat-bm-04",
+        category: "ban-motor",
+        brand: "Pirelli",
+        name: "Diablo Rosso Sport Tubeless",
+        spec: "120/70-13 NMAX / Maxi",
+        price: 475000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1578844251758-2f71da64c96f?w=500&auto=format&fit=crop&q=80",
+        desc: "Handling kelas balap untuk motor harian dan touring jarak jauh."
+    },
+    {
+        id: "cat-bm-05",
+        category: "ban-motor",
+        brand: "FDR",
+        name: "Flemmo Pro Tubeless",
+        spec: "90/90-14 Matic Belakang",
+        price: 225000,
+        stockStatus: "limited",
+        image: "https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=500&auto=format&fit=crop&q=80",
+        desc: "Karet berkualitas tinggi dari pabrikan Astra, awet untuk ojol & harian."
+    },
+
+    // --- BAN MOBIL ---
+    {
+        id: "cat-bl-01",
+        category: "ban-mobil",
+        brand: "Bridgestone",
+        name: "Ecopia EP150",
+        spec: "185/65 R15 (Avanza / Mobilio)",
+        price: 785000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1549492423-400259a2e574?w=500&auto=format&fit=crop&q=80",
+        desc: "Ban ramah lingkungan, hemat konsumsi BBM, senyap dan nyaman di jalan tol."
+    },
+    {
+        id: "cat-bl-02",
+        category: "ban-mobil",
+        brand: "Dunlop",
+        name: "Enasave EC300+",
+        spec: "175/65 R14 (Brio / Calya / Sigra)",
+        price: 595000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=500&auto=format&fit=crop&q=80",
+        desc: "Ban OEM mobil LCGC dan city car, daya tahan tapak sangat awet."
+    },
+    {
+        id: "cat-bl-03",
+        category: "ban-mobil",
+        brand: "GT Radial",
+        name: "Champiro Ecotec",
+        spec: "195/65 R15 (Innova / Ertiga)",
+        price: 645000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1549492423-400259a2e574?w=500&auto=format&fit=crop&q=80",
+        desc: "Produk nasional berkualitas ekspor dengan daya cengkeram prima di jalan basah."
+    },
+    {
+        id: "cat-bl-04",
+        category: "ban-mobil",
+        brand: "Michelin",
+        name: "Primacy 4 ST",
+        spec: "205/55 R16 (Rush / Terios / Civic)",
+        price: 1260000,
+        stockStatus: "limited",
+        image: "https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=500&auto=format&fit=crop&q=80",
+        desc: "Kenyamanan berkendara premium, pengereman terpendek dan kekedapan suara tinggi."
+    },
+    {
+        id: "cat-bl-05",
+        category: "ban-mobil",
+        brand: "Hankook",
+        name: "Kinergy Eco2 K435",
+        spec: "185/70 R14 (Xenia / Kijang)",
+        price: 560000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1549492423-400259a2e574?w=500&auto=format&fit=crop&q=80",
+        desc: "Teknologi senyawa silika baru untuk jarak pengereman lebih pendek di jalan aspal."
+    },
+
+    // --- OLI MOTOR ---
+    {
+        id: "cat-ol-01",
+        category: "oli-motor",
+        brand: "Motul",
+        name: "Scooter LE 4T 10W-30",
+        spec: "0.8 Liter Matic JASO MB",
+        price: 68000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=500&auto=format&fit=crop&q=80",
+        desc: "Teknologi HC-Tech melindungi ruang mesin matic dari panas ekstrem dan gesekan."
+    },
+    {
+        id: "cat-ol-02",
+        category: "oli-motor",
+        brand: "Pertamina",
+        name: "Enduro Matic G 20W-40",
+        spec: "0.8 Liter JASO MB API SL",
+        price: 45000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=500&auto=format&fit=crop&q=80",
+        desc: "Oli matic terpercaya dengan wangi khas dan akselerasi tarikan mesin enteng."
+    },
+    {
+        id: "cat-ol-03",
+        category: "oli-motor",
+        brand: "Shell",
+        name: "Advance AX7 10W-40 Synthetic",
+        spec: "1.0 Liter Bebek / Sport JASO MA2",
+        price: 62000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=500&auto=format&fit=crop&q=80",
+        desc: "Teknologi Shell Active Cleansing menjaga mesin tetap bersih dari endapan kotoran."
+    },
+    {
+        id: "cat-ol-04",
+        category: "oli-motor",
+        brand: "Yamalube",
+        name: "Super Matic Oil 10W-40 Full Synth",
+        spec: "1.0 Liter NMAX / Aerox / Maxi",
+        price: 76000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=500&auto=format&fit=crop&q=80",
+        desc: "Diformulasikan khusus untuk mesin Blue Core Yamaha Maxi dengan performa maksimal."
+    },
+
+    // --- OLI MOBIL ---
+    {
+        id: "cat-ol-05",
+        category: "oli-mobil",
+        brand: "Shell",
+        name: "Helix HX6 10W-40 Synthetic",
+        spec: "4.0 Liter (Galon) Bensin/Diesel",
+        price: 340000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=500&auto=format&fit=crop&q=80",
+        desc: "Membantu memperpanjang usia mesin mobil dan melindungi dari keausan berkendara harian."
+    },
+    {
+        id: "cat-ol-06",
+        category: "oli-mobil",
+        brand: "Pertamina",
+        name: "Fastron Gold 5W-30 Full Synthetic",
+        spec: "4.0 Liter (Galon) API SN Dexos 1",
+        price: 485000,
+        stockStatus: "ready",
+        image: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=500&auto=format&fit=crop&q=80",
+        desc: "Oli mobil bensin performa tinggi, efisiensi bahan bakar dan perlindungan dingin."
+    },
+    {
+        id: "cat-ol-07",
+        category: "oli-mobil",
+        brand: "Castrol",
+        name: "Magnatec Stop-Start 10W-40",
+        spec: "4.0 Liter Dualock Technology",
+        price: 395000,
+        stockStatus: "limited",
+        image: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=500&auto=format&fit=crop&q=80",
+        desc: "Molekul pintar melekat pada komponen mesin, melindungi 50% lebih baik saat macet."
     }
 ];

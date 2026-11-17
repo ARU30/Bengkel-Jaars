@@ -28,9 +28,17 @@ let state = {
     // Active Tab View
     activeTab: 'pos', // 'pos' | 'prices' | 'history' | 'settings'
 
-    // Admin Auth State
+    // Admin Auth State (Email & Password)
     isAdmin: false,
-    adminPin: '1234',
+    adminEmail: DEFAULT_ADMIN.email,
+    adminPassword: DEFAULT_ADMIN.password,
+
+    // Catalog State (Ban & Oli)
+    catalog: [],
+    catalogSearchQuery: '',
+    catalogCategoryFilter: 'all', // 'all' | 'ban-motor' | 'ban-mobil' | 'oli'
+    catalogBrandFilter: 'all',
+    editingCatalogId: null,
 
     // History & Financial Report Filter
     historyFilter: 'month', // 'today' | 'week' | 'month' | 'year' | 'all'
@@ -83,8 +91,13 @@ function loadData() {
         const savedTransactions = localStorage.getItem('bengkel_transactions');
         state.transactions = savedTransactions ? JSON.parse(savedTransactions) : [];
 
-        const savedPin = localStorage.getItem('bengkel_admin_pin');
-        state.adminPin = savedPin || '1234';
+        const savedCatalog = localStorage.getItem('bengkel_catalog');
+        state.catalog = savedCatalog ? JSON.parse(savedCatalog) : [ ...DEFAULT_CATALOG ];
+
+        const savedAdminEmail = localStorage.getItem('bengkel_admin_email');
+        const savedAdminPassword = localStorage.getItem('bengkel_admin_password');
+        state.adminEmail = (savedAdminEmail || DEFAULT_ADMIN.email).toLowerCase().trim();
+        state.adminPassword = savedAdminPassword || DEFAULT_ADMIN.password;
 
         // Check if admin is currently logged in in this session
         state.isAdmin = sessionStorage.getItem('bengkel_is_admin') === 'true';
@@ -93,6 +106,7 @@ function loadData() {
         state.profile = { ...DEFAULT_PROFILE };
         state.categories = [ ...DEFAULT_CATEGORIES ];
         state.services = [ ...DEFAULT_SERVICES ];
+        state.catalog = [ ...DEFAULT_CATALOG ];
         state.transactions = [];
     }
 }
@@ -103,6 +117,10 @@ function saveProfile() {
 
 function saveServices() {
     localStorage.setItem('bengkel_services', JSON.stringify(state.services));
+}
+
+function saveCatalog() {
+    localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
 }
 
 function saveTransactions() {
@@ -387,11 +405,168 @@ function initUI() {
         btn.addEventListener('click', closeModal);
     });
 
-    // Admin Mode Controls
+    // Info Panel & Quick Contact Controls
+    document.getElementById('btn-copy-phone')?.addEventListener('click', () => {
+        copyToClipboard(state.profile.phone || DEFAULT_PROFILE.phone, 'Nomor Telepon');
+    });
+    document.getElementById('btn-copy-address')?.addEventListener('click', () => {
+        copyToClipboard(state.profile.address || DEFAULT_PROFILE.address, 'Alamat Bengkel');
+    });
+    document.getElementById('btn-copy-email')?.addEventListener('click', () => {
+        copyToClipboard(state.profile.email || DEFAULT_PROFILE.email, 'Email Bengkel');
+    });
+    document.getElementById('btn-quick-info')?.addEventListener('click', () => {
+        switchTab('info');
+    });
+    document.getElementById('btn-info-to-pos')?.addEventListener('click', () => {
+        switchTab('pos');
+    });
+
+    // Admin Mode Controls (Email & Password)
     document.getElementById('btn-admin-login')?.addEventListener('click', openAdminLoginModal);
     document.getElementById('btn-admin-logout')?.addEventListener('click', handleAdminLogout);
     document.getElementById('form-admin-login')?.addEventListener('submit', handleAdminLoginSubmit);
-    document.getElementById('btn-save-admin-pin')?.addEventListener('click', handleSaveAdminPin);
+    document.getElementById('form-admin-account')?.addEventListener('submit', handleSaveAdminAccount);
+
+    // Password Visibility Toggles
+    document.querySelectorAll('.btn-toggle-pwd').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const targetId = btn.getAttribute('data-target');
+            const targetInput = document.getElementById(targetId);
+            if (targetInput) {
+                if (targetInput.type === 'password') {
+                    targetInput.type = 'text';
+                    btn.textContent = '🙈';
+                } else {
+                    targetInput.type = 'password';
+                    btn.textContent = '👁️';
+                }
+            }
+        });
+    });
+
+    // Catalog (Ban & Oli) Controls
+    document.querySelectorAll('.btn-catalog-cat').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const cat = btn.getAttribute('data-catalog-category');
+            state.catalogCategoryFilter = cat;
+            state.catalogBrandFilter = 'all';
+
+            document.querySelectorAll('.btn-catalog-cat').forEach(b => {
+                if (b.getAttribute('data-catalog-category') === cat) {
+                    b.className = 'btn-catalog-cat px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all bg-blue-600 text-white shadow-sm flex items-center gap-1.5 shrink-0';
+                } else {
+                    b.className = 'btn-catalog-cat px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all bg-slate-100 text-slate-600 hover:bg-slate-200/70 flex items-center gap-1.5 shrink-0';
+                }
+            });
+
+            renderCatalogFilterBrands();
+            renderCatalogProducts();
+        });
+    });
+
+    const catalogSearchInput = document.getElementById('catalog-search-input');
+    const btnClearCatalogSearch = document.getElementById('btn-clear-catalog-search');
+
+    if (catalogSearchInput) {
+        catalogSearchInput.addEventListener('input', (e) => {
+            state.catalogSearchQuery = e.target.value.trim();
+            if (btnClearCatalogSearch) {
+                if (state.catalogSearchQuery) {
+                    btnClearCatalogSearch.classList.remove('hidden');
+                } else {
+                    btnClearCatalogSearch.classList.add('hidden');
+                }
+            }
+            renderCatalogProducts();
+        });
+    }
+
+    if (btnClearCatalogSearch) {
+        btnClearCatalogSearch.addEventListener('click', () => {
+            state.catalogSearchQuery = '';
+            if (catalogSearchInput) catalogSearchInput.value = '';
+            btnClearCatalogSearch.classList.add('hidden');
+            renderCatalogProducts();
+        });
+    }
+
+    document.getElementById('btn-reset-catalog-filters')?.addEventListener('click', () => {
+        state.catalogSearchQuery = '';
+        state.catalogCategoryFilter = 'all';
+        state.catalogBrandFilter = 'all';
+        if (catalogSearchInput) catalogSearchInput.value = '';
+        if (btnClearCatalogSearch) btnClearCatalogSearch.classList.add('hidden');
+
+        document.querySelectorAll('.btn-catalog-cat').forEach(b => {
+            if (b.getAttribute('data-catalog-category') === 'all') {
+                b.className = 'btn-catalog-cat px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all bg-blue-600 text-white shadow-sm flex items-center gap-1.5 shrink-0';
+            } else {
+                b.className = 'btn-catalog-cat px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all bg-slate-100 text-slate-600 hover:bg-slate-200/70 flex items-center gap-1.5 shrink-0';
+            }
+        });
+
+        renderCatalogPanel();
+    });
+
+    // Admin Catalog Modal Controls
+    document.getElementById('btn-open-add-catalog')?.addEventListener('click', openAddCatalogModal);
+    document.getElementById('btn-reset-default-catalog')?.addEventListener('click', resetDefaultCatalog);
+    document.getElementById('form-catalog-item')?.addEventListener('submit', handleSaveCatalogItem);
+
+    // Image Upload & Preview in Catalog Modal
+    const catalogFile = document.getElementById('catalog-form-image-file');
+    const catalogHidImg = document.getElementById('catalog-form-image-data');
+    const catalogUrlInput = document.getElementById('catalog-form-image-url');
+    const catalogPreviewImg = document.getElementById('catalog-form-preview-img');
+    const catalogPlaceholder = document.getElementById('catalog-form-preview-placeholder');
+
+    if (catalogFile) {
+        catalogFile.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            try {
+                const compressedBase64 = await compressImage(file, 400, 400, 0.75);
+                if (catalogHidImg) catalogHidImg.value = compressedBase64;
+                if (catalogUrlInput) catalogUrlInput.value = '';
+                if (catalogPreviewImg) {
+                    catalogPreviewImg.src = compressedBase64;
+                    catalogPreviewImg.classList.remove('hidden');
+                }
+                if (catalogPlaceholder) catalogPlaceholder.classList.add('hidden');
+                showToast('Foto produk berhasil dimuat!');
+            } catch (err) {
+                console.error(err);
+                alert('Gagal memproses gambar. Pastikan format file JPG/PNG.');
+            }
+        });
+    }
+
+    if (catalogUrlInput) {
+        catalogUrlInput.addEventListener('input', (e) => {
+            const val = e.target.value.trim();
+            if (val) {
+                if (catalogHidImg) catalogHidImg.value = val;
+                if (catalogPreviewImg) {
+                    catalogPreviewImg.src = val;
+                    catalogPreviewImg.classList.remove('hidden');
+                }
+                if (catalogPlaceholder) catalogPlaceholder.classList.add('hidden');
+            }
+        });
+    }
+
+    document.getElementById('btn-clear-catalog-photo')?.addEventListener('click', () => {
+        if (catalogFile) catalogFile.value = '';
+        if (catalogUrlInput) catalogUrlInput.value = '';
+        if (catalogHidImg) catalogHidImg.value = '';
+        if (catalogPreviewImg) {
+            catalogPreviewImg.src = '';
+            catalogPreviewImg.classList.add('hidden');
+        }
+        if (catalogPlaceholder) catalogPlaceholder.classList.remove('hidden');
+    });
 
     // Initial check of admin visibility
     updateAdminUI();
@@ -406,6 +581,8 @@ function renderAll() {
     renderHistory();
     renderProfileForm();
     renderPaymentSections();
+    renderInfoPanel();
+    renderCatalogPanel();
 }
 
 // --- WORKSHOP HEADER & PROFILE ---
@@ -413,17 +590,25 @@ function renderWorkshopHeader() {
     const nameEl = document.getElementById('header-bengkel-name');
     const taglineEl = document.getElementById('header-bengkel-tagline');
     const phoneEl = document.getElementById('header-bengkel-phone');
+    const footerNameEl = document.getElementById('footer-bengkel-name');
+    const footerHoursEl = document.getElementById('footer-bengkel-hours');
 
     if (nameEl) nameEl.textContent = state.profile.name;
     if (taglineEl) taglineEl.textContent = state.profile.tagline;
     if (phoneEl) phoneEl.textContent = state.profile.phone;
+    if (footerNameEl) footerNameEl.textContent = state.profile.name;
+    if (footerHoursEl) footerHoursEl.textContent = 'Buka: ' + (state.profile.operatingHours || DEFAULT_PROFILE.operatingHours || '08.00 - 21.00 WIB');
+
+    renderInfoPanel();
 }
 
 function renderProfileForm() {
     const fName = document.getElementById('settings-name');
     const fTagline = document.getElementById('settings-tagline');
     const fPhone = document.getElementById('settings-phone');
+    const fEmail = document.getElementById('settings-email');
     const fAddress = document.getElementById('settings-address');
+    const fHours = document.getElementById('settings-operating-hours');
     const fFooter = document.getElementById('settings-receipt-footer');
     const fBankName = document.getElementById('settings-bank-name');
     const fBankAccount = document.getElementById('settings-bank-account');
@@ -432,11 +617,16 @@ function renderProfileForm() {
     if (fName) fName.value = state.profile.name || '';
     if (fTagline) fTagline.value = state.profile.tagline || '';
     if (fPhone) fPhone.value = state.profile.phone || '';
+    if (fEmail) fEmail.value = state.profile.email || DEFAULT_PROFILE.email || '';
     if (fAddress) fAddress.value = state.profile.address || '';
+    if (fHours) fHours.value = state.profile.operatingHours || DEFAULT_PROFILE.operatingHours || '';
     if (fFooter) fFooter.value = state.profile.receiptFooter || '';
     if (fBankName) fBankName.value = state.profile.bankName || DEFAULT_PROFILE.bankName;
     if (fBankAccount) fBankAccount.value = state.profile.bankAccount || DEFAULT_PROFILE.bankAccount;
     if (fBankHolder) fBankHolder.value = state.profile.bankHolder || DEFAULT_PROFILE.bankHolder;
+
+    const fAdminEmail = document.getElementById('settings-admin-email');
+    if (fAdminEmail) fAdminEmail.value = state.adminEmail || DEFAULT_ADMIN.email;
 }
 
 function handleSaveProfile(e) {
@@ -446,7 +636,9 @@ function handleSaveProfile(e) {
         name: document.getElementById('settings-name').value.trim() || DEFAULT_PROFILE.name,
         tagline: document.getElementById('settings-tagline').value.trim(),
         phone: document.getElementById('settings-phone').value.trim(),
+        email: document.getElementById('settings-email')?.value.trim() || DEFAULT_PROFILE.email,
         address: document.getElementById('settings-address').value.trim(),
+        operatingHours: document.getElementById('settings-operating-hours')?.value.trim() || DEFAULT_PROFILE.operatingHours,
         receiptFooter: document.getElementById('settings-receipt-footer').value.trim(),
         bankName: document.getElementById('settings-bank-name')?.value.trim() || DEFAULT_PROFILE.bankName,
         bankAccount: document.getElementById('settings-bank-account')?.value.trim() || DEFAULT_PROFILE.bankAccount,
@@ -454,8 +646,161 @@ function handleSaveProfile(e) {
     };
     saveProfile();
     renderWorkshopHeader();
+    renderInfoPanel();
     renderPaymentSections();
     showToast('Profil bengkel & data pembayaran berhasil disimpan!');
+}
+
+// --- HELPER CLIPBOARD & STATUS OPERASIONAL ---
+function copyToClipboard(text, label = 'Data') {
+    if (!text) {
+        showToast(`Tidak ada ${label} untuk disalin!`);
+        return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+            showToast(`${label} berhasil disalin ke clipboard!`);
+        }).catch(() => {
+            fallbackCopyText(text, label);
+        });
+    } else {
+        fallbackCopyText(text, label);
+    }
+}
+
+function fallbackCopyText(text, label) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+        document.execCommand('copy');
+        showToast(`${label} berhasil disalin ke clipboard!`);
+    } catch (e) {
+        showToast(`Gagal menyalin ${label}`);
+    }
+    document.body.removeChild(ta);
+}
+
+function getOperatingStatus(operatingHoursStr) {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMin = now.getMinutes();
+    const currentTotalMin = currentHour * 60 + currentMin;
+
+    let openTotalMin = 8 * 60; // 08:00
+    let closeTotalMin = 21 * 60; // 21:00
+
+    if (operatingHoursStr) {
+        const match = operatingHoursStr.match(/(\d{1,2})[.:](\d{2})\s*[-–]\s*(\d{1,2})[.:](\d{2})/);
+        if (match) {
+            openTotalMin = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+            closeTotalMin = parseInt(match[3], 10) * 60 + parseInt(match[4], 10);
+        }
+    }
+
+    const isOpen = currentTotalMin >= openTotalMin && currentTotalMin < closeTotalMin;
+    const formatTimeStr = (totalMin) => {
+        const h = Math.floor(totalMin / 60).toString().padStart(2, '0');
+        const m = (totalMin % 60).toString().padStart(2, '0');
+        return `${h}.${m}`;
+    };
+
+    return {
+        isOpen,
+        badgeText: isOpen ? 'BUKA SEKARANG' : 'SEDANG TUTUP',
+        statusDesc: isOpen 
+            ? `Buka sampai pkl ${formatTimeStr(closeTotalMin)} WIB • Silakan datang langsung atau hubungi kami`
+            : `Buka kembali pkl ${formatTimeStr(openTotalMin)} WIB • Chat WhatsApp tetap dapat dikirim`
+    };
+}
+
+// --- RENDER PANEL INFORMASI PENGGUNA (KONTAK, ALAMAT, EMAIL, JAM BUKA) ---
+function renderInfoPanel() {
+    const profile = state.profile || DEFAULT_PROFILE;
+    const name = profile.name || DEFAULT_PROFILE.name;
+    const tagline = profile.tagline || DEFAULT_PROFILE.tagline;
+    const phone = profile.phone || DEFAULT_PROFILE.phone;
+    const address = profile.address || DEFAULT_PROFILE.address;
+    const email = profile.email || DEFAULT_PROFILE.email || 'jaarsgarage.madiun@gmail.com';
+    const hours = profile.operatingHours || DEFAULT_PROFILE.operatingHours || 'Senin - Minggu: 08.00 - 21.00 WIB';
+
+    // Populate Hero elements
+    const heroName = document.getElementById('info-bengkel-name');
+    const heroTagline = document.getElementById('info-bengkel-tagline');
+    const heroStatusBadge = document.getElementById('info-status-badge');
+    const heroStatusDesc = document.getElementById('info-status-desc');
+    const heroWaBtn = document.getElementById('hero-wa-btn');
+
+    if (heroName) heroName.textContent = name;
+    if (heroTagline) heroTagline.textContent = tagline;
+
+    // Real-time Operating Status
+    const status = getOperatingStatus(hours);
+    if (heroStatusBadge) {
+        if (status.isOpen) {
+            heroStatusBadge.className = 'inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30';
+            heroStatusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> BUKA SEKARANG';
+        } else {
+            heroStatusBadge.className = 'inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-400/30';
+            heroStatusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-400"></span> SEDANG TUTUP';
+        }
+    }
+    if (heroStatusDesc) {
+        heroStatusDesc.innerHTML = `<span>⏱️</span> <span>${status.statusDesc}</span>`;
+    }
+
+    // Subheader status badge
+    const subheaderStatus = document.getElementById('header-open-status');
+    if (subheaderStatus) {
+        subheaderStatus.textContent = status.isOpen ? 'Buka Sekarang' : 'Sedang Tutup';
+        subheaderStatus.className = status.isOpen ? 'font-semibold text-emerald-400' : 'font-semibold text-rose-400';
+    }
+
+    // Populate 4 Info Cards
+    const infoPhone = document.getElementById('info-bengkel-phone');
+    const infoAddress = document.getElementById('info-bengkel-address');
+    const infoEmail = document.getElementById('info-bengkel-email');
+    const infoHours = document.getElementById('info-bengkel-hours');
+    const infoOpenStatusBadge = document.getElementById('info-open-status-badge');
+
+    if (infoPhone) infoPhone.textContent = phone;
+    if (infoAddress) infoAddress.textContent = address;
+    if (infoEmail) infoEmail.textContent = email;
+    if (infoHours) infoHours.textContent = hours;
+    if (infoOpenStatusBadge) {
+        infoOpenStatusBadge.textContent = status.isOpen ? 'Buka Hari Ini' : 'Tutup Hari Ini';
+        infoOpenStatusBadge.className = status.isOpen 
+            ? 'text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full'
+            : 'text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded-full';
+    }
+
+    // Action Links
+    const cleanPhone = formatWhatsAppNumber(phone);
+    const waText = encodeURIComponent(`Halo ${name}, saya ingin bertanya mengenai layanan tambal ban / cuci kendaraan.`);
+    const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}?text=${waText}` : '#';
+
+    const linkWa = document.getElementById('link-wa-direct');
+    if (linkWa) linkWa.href = waUrl;
+    if (heroWaBtn) heroWaBtn.href = waUrl;
+
+    const linkPhone = document.getElementById('link-phone-call');
+    if (linkPhone) {
+        linkPhone.href = phone ? `tel:${phone.replace(/\s+/g, '')}` : '#';
+    }
+
+    const linkGmaps = document.getElementById('link-gmaps');
+    if (linkGmaps) {
+        linkGmaps.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || (name + ' Madiun'))}`;
+    }
+
+    const linkEmail = document.getElementById('link-email-direct');
+    if (linkEmail) {
+        const mailSubject = encodeURIComponent(`Pertanyaan Layanan - ${name}`);
+        linkEmail.href = email ? `mailto:${email}?subject=${mailSubject}` : '#';
+    }
 }
 
 // --- PAYMENT SECTIONS & QRIS / TRANSFER DISPLAY ---
@@ -534,11 +879,515 @@ function setVehicle(type) {
     renderCatalog();
 }
 
+// --- HELPER COMPRESS IMAGE & FALLBACK ---
+function compressImage(file, maxWidth = 400, maxHeight = 400, quality = 0.75) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height = Math.round((height * maxWidth) / width);
+                        width = maxWidth;
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width = Math.round((width * maxHeight) / height);
+                        height = maxHeight;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.onerror = () => reject(new Error('Gagal memproses gambar'));
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function getFallbackCatalogImage(category) {
+    const isOil = (category || '').includes('oli');
+    const isCar = (category || '').includes('mobil');
+    const bgColor = isOil ? '#f59e0b' : (isCar ? '#0284c7' : '#10b981');
+    const icon = isOil ? '🛢️' : '🛞';
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">
+        <rect width="400" height="400" fill="${bgColor}"/>
+        <circle cx="200" cy="200" r="110" fill="#ffffff" opacity="0.18"/>
+        <circle cx="200" cy="200" r="85" fill="#ffffff" opacity="0.12"/>
+        <text x="200" y="235" font-size="100" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif">${icon}</text>
+    </svg>`;
+
+    try {
+        return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+    } catch (e) {
+        return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    }
+}
+
+window.handleCatalogImgError = function(imgEl, category) {
+    if (!imgEl) return;
+    imgEl.onerror = null;
+    imgEl.src = getFallbackCatalogImage(category);
+};
+
+// --- KATALOG BAN MOTOR, MOBIL & OLI KENDARAAN ---
+function renderCatalogPanel() {
+    updateCatalogCountBadges();
+    renderCatalogFilterBrands();
+    renderCatalogProducts();
+
+    const toolbar = document.getElementById('catalog-admin-toolbar');
+    if (toolbar) {
+        if (state.isAdmin) {
+            toolbar.classList.remove('hidden');
+        } else {
+            toolbar.classList.add('hidden');
+        }
+    }
+}
+
+function updateCatalogCountBadges() {
+    const catalog = state.catalog || [];
+    const countAll = catalog.length;
+    const countBanMotor = catalog.filter(p => p.category === 'ban-motor').length;
+    const countBanMobil = catalog.filter(p => p.category === 'ban-mobil').length;
+    const countOli = catalog.filter(p => p.category.includes('oli')).length;
+
+    const bAll = document.getElementById('badge-count-all');
+    const bMotor = document.getElementById('badge-count-ban-motor');
+    const bMobil = document.getElementById('badge-count-ban-mobil');
+    const bOli = document.getElementById('badge-count-oli');
+
+    if (bAll) bAll.textContent = countAll;
+    if (bMotor) bMotor.textContent = countBanMotor;
+    if (bMobil) bMobil.textContent = countBanMobil;
+    if (bOli) bOli.textContent = countOli;
+}
+
+function renderCatalogFilterBrands() {
+    const bar = document.getElementById('catalog-brand-filter-bar');
+    if (!bar) return;
+
+    let items = state.catalog || [];
+    if (state.catalogCategoryFilter === 'ban-motor') {
+        items = items.filter(p => p.category === 'ban-motor');
+    } else if (state.catalogCategoryFilter === 'ban-mobil') {
+        items = items.filter(p => p.category === 'ban-mobil');
+    } else if (state.catalogCategoryFilter === 'oli') {
+        items = items.filter(p => p.category.includes('oli'));
+    }
+
+    const brands = [ ...new Set(items.map(p => p.brand).filter(Boolean)) ].sort();
+
+    let html = `
+        <button type="button" data-catalog-brand="all"
+            class="px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 ${state.catalogBrandFilter === 'all' ? 'bg-slate-900 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+            Semua Merek
+        </button>
+    `;
+
+    brands.forEach(b => {
+        const isActive = state.catalogBrandFilter.toLowerCase() === b.toLowerCase();
+        html += `
+            <button type="button" data-catalog-brand="${b}"
+                class="px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 ${isActive ? 'bg-slate-900 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+                ${b}
+            </button>
+        `;
+    });
+
+    bar.innerHTML = html;
+
+    bar.querySelectorAll('[data-catalog-brand]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            state.catalogBrandFilter = btn.getAttribute('data-catalog-brand');
+            renderCatalogFilterBrands();
+            renderCatalogProducts();
+        });
+    });
+}
+
+function renderCatalogProducts() {
+    const grid = document.getElementById('catalog-products-grid');
+    const emptyState = document.getElementById('catalog-empty-state');
+    const countEl = document.getElementById('catalog-results-count');
+    if (!grid) return;
+
+    let list = state.catalog || [];
+
+    if (state.catalogCategoryFilter === 'ban-motor') {
+        list = list.filter(p => p.category === 'ban-motor');
+    } else if (state.catalogCategoryFilter === 'ban-mobil') {
+        list = list.filter(p => p.category === 'ban-mobil');
+    } else if (state.catalogCategoryFilter === 'oli') {
+        list = list.filter(p => p.category.includes('oli'));
+    }
+
+    if (state.catalogBrandFilter && state.catalogBrandFilter !== 'all') {
+        list = list.filter(p => p.brand.toLowerCase() === state.catalogBrandFilter.toLowerCase());
+    }
+
+    if (state.catalogSearchQuery) {
+        const q = state.catalogSearchQuery.toLowerCase();
+        list = list.filter(p => 
+            (p.brand && p.brand.toLowerCase().includes(q)) ||
+            (p.name && p.name.toLowerCase().includes(q)) ||
+            (p.spec && p.spec.toLowerCase().includes(q)) ||
+            (p.desc && p.desc.toLowerCase().includes(q))
+        );
+    }
+
+    if (countEl) {
+        countEl.textContent = `${list.length} produk ditampilkan`;
+    }
+
+    if (list.length === 0) {
+        grid.innerHTML = '';
+        if (emptyState) emptyState.classList.remove('hidden');
+        return;
+    }
+
+    if (emptyState) emptyState.classList.add('hidden');
+
+    grid.innerHTML = list.map(item => {
+        let catBadgeText = 'Ban Motor';
+        let catBadgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+        if (item.category === 'ban-mobil') {
+            catBadgeText = 'Ban Mobil';
+            catBadgeClass = 'bg-blue-100 text-blue-800 border-blue-200';
+        } else if (item.category === 'oli-motor') {
+            catBadgeText = 'Oli Motor';
+            catBadgeClass = 'bg-amber-100 text-amber-800 border-amber-200';
+        } else if (item.category === 'oli-mobil') {
+            catBadgeText = 'Oli Mobil';
+            catBadgeClass = 'bg-cyan-100 text-cyan-800 border-cyan-200';
+        }
+
+        let stockText = 'Ready Stok';
+        let stockClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+        if (item.stockStatus === 'limited') {
+            stockText = 'Stok Terbatas';
+            stockClass = 'bg-amber-50 text-amber-700 border-amber-200';
+        } else if (item.stockStatus === 'preorder') {
+            stockText = 'Bisa Dipesan';
+            stockClass = 'bg-blue-50 text-blue-700 border-blue-200';
+        }
+
+        const fallbackImg = getFallbackCatalogImage(item.category);
+        const imgSrc = (item.image && typeof item.image === 'string' && item.image.trim()) ? item.image : fallbackImg;
+
+        return `
+            <div class="bg-white rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
+                <div>
+                    <!-- Product Image Container -->
+                    <div class="relative w-full aspect-4/3 bg-slate-100 overflow-hidden border-b border-slate-100 flex items-center justify-center">
+                        <img src="${imgSrc}" alt="${escapeHtml(item.brand)} ${escapeHtml(item.name)}"
+                            onerror="window.handleCatalogImgError(this, '${escapeHtml(item.category)}')"
+                            class="w-full h-full object-cover group-hover:scale-105 transition-all duration-300">
+                        
+                        <!-- Badges on Image -->
+                        <div class="absolute top-2.5 left-2.5 flex items-center gap-1.5 flex-wrap">
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-white/95 text-slate-800 shadow-xs backdrop-blur-xs border border-slate-200">
+                                ${escapeHtml(item.brand)}
+                            </span>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${catBadgeClass} bg-white/90 shadow-xs backdrop-blur-xs">
+                                ${catBadgeText}
+                            </span>
+                        </div>
+
+                        <div class="absolute bottom-2.5 right-2.5">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${stockClass} bg-white/95 shadow-xs backdrop-blur-xs">
+                                ${stockText}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Product Body Content -->
+                    <div class="p-4 flex flex-col gap-1.5">
+                        <div class="flex items-start justify-between gap-1">
+                            <div>
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">${escapeHtml(item.brand)}</span>
+                                <h4 class="font-extrabold text-sm text-slate-900 leading-snug line-clamp-1">${escapeHtml(item.name)}</h4>
+                            </div>
+                        </div>
+
+                        <div class="inline-flex items-center gap-1 py-1 px-2 rounded-lg bg-slate-50 border border-slate-100 text-[11px] font-mono font-semibold text-slate-700 w-fit">
+                            <span>📐</span>
+                            <span>${escapeHtml(item.spec)}</span>
+                        </div>
+
+                        ${item.desc ? `<p class="text-[11px] text-slate-500 line-clamp-2 mt-0.5 leading-relaxed">${escapeHtml(item.desc)}</p>` : ''}
+
+                        <!-- Price Tag -->
+                        <div class="mt-2 pt-2 border-t border-slate-100 flex items-baseline justify-between">
+                            <span class="text-[10px] uppercase font-bold text-slate-400">Harga Resmi</span>
+                            <span class="font-black text-base text-emerald-700">${formatRupiah(item.price)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="p-3 bg-slate-50/70 border-t border-slate-100 flex flex-col gap-1.5">
+                    <div class="flex items-center gap-1.5">
+                        <button type="button" onclick="inquireCatalogWhatsApp('${escapeHtml(item.id)}')"
+                            class="flex-1 py-2 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1 transition-all active:scale-95"
+                            title="Tanya ketersediaan stok via WhatsApp">
+                            <span>💬</span>
+                            <span>Tanya WA</span>
+                        </button>
+                        <button type="button" onclick="addCatalogItemToCart('${escapeHtml(item.id)}')"
+                            class="py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1 transition-all active:scale-95"
+                            title="Masukkan produk ini ke nota kasir saat ini">
+                            <span>🛒</span>
+                            <span class="hidden sm:inline">Kasir</span>
+                        </button>
+                    </div>
+
+                    ${state.isAdmin ? `
+                    <div class="flex items-center gap-1.5 pt-1.5 border-t border-slate-200/60">
+                        <button type="button" onclick="openEditCatalogModal('${escapeHtml(item.id)}')"
+                            class="flex-1 py-1.5 bg-white hover:bg-blue-50 text-blue-700 font-bold text-[11px] rounded-lg border border-slate-200 transition-all flex items-center justify-center gap-1">
+                            <span>✏️</span>
+                            <span>Edit</span>
+                        </button>
+                        <button type="button" onclick="deleteCatalogItem('${escapeHtml(item.id)}')"
+                            class="px-2.5 py-1.5 bg-white hover:bg-rose-50 text-rose-600 font-bold text-[11px] rounded-lg border border-slate-200 transition-all flex items-center justify-center gap-1"
+                            title="Hapus produk ini">
+                            <span>🗑️</span>
+                        </button>
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function openAddCatalogModal() {
+    state.editingCatalogId = null;
+    const title = document.getElementById('modal-catalog-title');
+    const form = document.getElementById('form-catalog-item');
+    if (title) title.textContent = 'Tambah Produk Ban / Oli Baru';
+    if (form) form.reset();
+
+    const hidId = document.getElementById('catalog-form-id');
+    const hidImg = document.getElementById('catalog-form-image-data');
+    const previewImg = document.getElementById('catalog-form-preview-img');
+    const previewPlaceholder = document.getElementById('catalog-form-preview-placeholder');
+
+    if (hidId) hidId.value = '';
+    if (hidImg) hidImg.value = '';
+    if (previewImg) {
+        previewImg.src = '';
+        previewImg.classList.add('hidden');
+    }
+    if (previewPlaceholder) previewPlaceholder.classList.remove('hidden');
+
+    const modal = document.getElementById('modal-catalog-item');
+    if (modal) modal.classList.remove('hidden');
+}
+
+function openEditCatalogModal(id) {
+    const item = state.catalog.find(p => p.id === id);
+    if (!item) return;
+
+    state.editingCatalogId = id;
+    const title = document.getElementById('modal-catalog-title');
+    if (title) title.textContent = `Edit Produk: ${item.brand} ${item.name}`;
+
+    const hidId = document.getElementById('catalog-form-id');
+    const cat = document.getElementById('catalog-form-category');
+    const brand = document.getElementById('catalog-form-brand');
+    const name = document.getElementById('catalog-form-name');
+    const spec = document.getElementById('catalog-form-spec');
+    const price = document.getElementById('catalog-form-price');
+    const stock = document.getElementById('catalog-form-stock');
+    const desc = document.getElementById('catalog-form-desc');
+    const hidImg = document.getElementById('catalog-form-image-data');
+    const urlInput = document.getElementById('catalog-form-image-url');
+    const previewImg = document.getElementById('catalog-form-preview-img');
+    const previewPlaceholder = document.getElementById('catalog-form-preview-placeholder');
+
+    if (hidId) hidId.value = item.id;
+    if (cat) cat.value = item.category;
+    if (brand) brand.value = item.brand;
+    if (name) name.value = item.name;
+    if (spec) spec.value = item.spec;
+    if (price) price.value = item.price;
+    if (stock) stock.value = item.stockStatus || 'ready';
+    if (desc) desc.value = item.desc || '';
+    if (hidImg) hidImg.value = item.image || '';
+    if (urlInput) urlInput.value = item.image && item.image.startsWith('http') ? item.image : '';
+
+    if (item.image) {
+        if (previewImg) {
+            previewImg.src = item.image;
+            previewImg.classList.remove('hidden');
+        }
+        if (previewPlaceholder) previewPlaceholder.classList.add('hidden');
+    } else {
+        if (previewImg) {
+            previewImg.src = '';
+            previewImg.classList.add('hidden');
+        }
+        if (previewPlaceholder) previewPlaceholder.classList.remove('hidden');
+    }
+
+    const modal = document.getElementById('modal-catalog-item');
+    if (modal) modal.classList.remove('hidden');
+}
+
+async function handleSaveCatalogItem(e) {
+    e.preventDefault();
+    const id = document.getElementById('catalog-form-id').value;
+    const category = document.getElementById('catalog-form-category').value;
+    const brand = document.getElementById('catalog-form-brand').value.trim();
+    const name = document.getElementById('catalog-form-name').value.trim();
+    const spec = document.getElementById('catalog-form-spec').value.trim();
+    const price = Number(document.getElementById('catalog-form-price').value) || 0;
+    const stockStatus = document.getElementById('catalog-form-stock').value;
+    const desc = document.getElementById('catalog-form-desc').value.trim();
+    let image = document.getElementById('catalog-form-image-data').value.trim();
+    const urlInput = document.getElementById('catalog-form-image-url').value.trim();
+
+    if (urlInput && !image) {
+        image = urlInput;
+    }
+
+    if (!brand || !name || price <= 0) {
+        alert('Mohon lengkapi merek, nama produk, dan harga yang valid!');
+        return;
+    }
+
+    if (id) {
+        // Edit existing
+        const idx = state.catalog.findIndex(p => p.id === id);
+        if (idx >= 0) {
+            state.catalog[idx] = {
+                ...state.catalog[idx],
+                category, brand, name, spec, price, stockStatus, desc,
+                image: image || state.catalog[idx].image
+            };
+        }
+    } else {
+        // Create new
+        const newItem = {
+            id: generateId('cat'),
+            category, brand, name, spec, price, stockStatus, desc,
+            image: image || ''
+        };
+        state.catalog.unshift(newItem);
+    }
+
+    saveCatalog();
+    closeModal();
+    renderCatalogPanel();
+    showToast(`Produk "${brand} ${name}" berhasil disimpan ke katalog!`);
+}
+
+function deleteCatalogItem(id) {
+    const item = state.catalog.find(p => p.id === id);
+    if (!item) return;
+
+    if (confirm(`Yakin ingin menghapus produk "${item.brand} ${item.name}" dari katalog?`)) {
+        state.catalog = state.catalog.filter(p => p.id !== id);
+        saveCatalog();
+        renderCatalogPanel();
+        showToast(`Produk "${item.brand} ${item.name}" telah dihapus.`);
+    }
+}
+
+function resetDefaultCatalog() {
+    if (confirm('PERINGATAN: Semua produk katalog akan dikembalikan ke daftar bawaan default awal. Lanjutkan?')) {
+        state.catalog = [ ...DEFAULT_CATALOG ];
+        saveCatalog();
+        renderCatalogPanel();
+        showToast('Katalog ban & oli berhasil direset ke pengaturan default.');
+    }
+}
+
+function inquireCatalogWhatsApp(itemId) {
+    const item = state.catalog.find(p => p.id === itemId);
+    if (!item) return;
+
+    const profile = state.profile || DEFAULT_PROFILE;
+    const phone = profile.phone || DEFAULT_PROFILE.phone;
+    const cleanPhone = formatWhatsAppNumber(phone);
+    if (!cleanPhone) {
+        alert('Nomor WhatsApp bengkel belum diatur!');
+        return;
+    }
+
+    let categoryLabel = 'Ban Motor';
+    if (item.category === 'ban-mobil') categoryLabel = 'Ban Mobil';
+    else if (item.category === 'oli-motor') categoryLabel = 'Oli Motor';
+    else if (item.category === 'oli-mobil') categoryLabel = 'Oli Mobil';
+
+    const msg = `Halo *${profile.name}*,\nSaya melihat katalog di website dan ingin menanyakan stok produk:\n\n*${item.brand} - ${item.name}*\n📦 Kategori: ${categoryLabel}\n📐 Spesifikasi/Ukuran: ${item.spec}\n💰 Harga: ${formatRupiah(item.price)}\n\nApakah barang ini ready dan bisa langsung dipasang/ganti di bengkel? Terima kasih!`;
+
+    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+}
+
+function addCatalogItemToCart(itemId) {
+    const item = state.catalog.find(p => p.id === itemId);
+    if (!item) return;
+
+    const existingIndex = state.cart.findIndex(c => c.catalogId === itemId || c.name === `${item.brand} ${item.name} (${item.spec})`);
+    if (existingIndex >= 0) {
+        state.cart[existingIndex].qty += 1;
+    } else {
+        state.cart.push({
+            id: generateId('cart'),
+            catalogId: item.id,
+            name: `${item.brand} ${item.name} (${item.spec})`,
+            price: Number(item.price),
+            qty: 1,
+            unit: 'pcs',
+            applicable: item.category.includes('motor') ? 'motor' : 'mobil'
+        });
+    }
+    renderCart();
+    showToast(`"${item.brand} ${item.name}" dimasukkan ke Struk Kasir!`);
+}
+
+// Expose functions to window for onclick handlers
+window.openAddCatalogModal = openAddCatalogModal;
+window.openEditCatalogModal = openEditCatalogModal;
+window.deleteCatalogItem = deleteCatalogItem;
+window.resetDefaultCatalog = resetDefaultCatalog;
+window.inquireCatalogWhatsApp = inquireCatalogWhatsApp;
+window.addCatalogItemToCart = addCatalogItemToCart;
+window.handleCatalogImgError = handleCatalogImgError;
+
 // --- ADMIN MODE MANAGER ---
 function updateAdminUI() {
     const navGroup = document.getElementById('admin-nav-group');
     const btnLogin = document.getElementById('btn-admin-login');
     const barLoggedIn = document.getElementById('admin-logged-in-bar');
+    const catalogToolbar = document.getElementById('catalog-admin-toolbar');
 
     if (state.isAdmin) {
         if (navGroup) {
@@ -550,6 +1399,7 @@ function updateAdminUI() {
             barLoggedIn.classList.remove('hidden');
             barLoggedIn.classList.add('flex');
         }
+        if (catalogToolbar) catalogToolbar.classList.remove('hidden');
     } else {
         if (navGroup) {
             navGroup.classList.add('hidden');
@@ -560,44 +1410,68 @@ function updateAdminUI() {
             barLoggedIn.classList.add('hidden');
             barLoggedIn.classList.remove('flex');
         }
+        if (catalogToolbar) catalogToolbar.classList.add('hidden');
 
         // Jika sedang berada di tab admin saat logout, kembalikan ke tab pos (kasir)
-        if (state.activeTab !== 'pos') {
+        if (state.activeTab !== 'pos' && state.activeTab !== 'catalog' && state.activeTab !== 'info') {
             switchTab('pos');
         }
     }
+
+    renderCatalogProducts();
 }
 
 function openAdminLoginModal() {
     const modal = document.getElementById('modal-admin-login');
-    const input = document.getElementById('admin-pin-input');
+    const emailInput = document.getElementById('admin-email-input');
+    const passwordInput = document.getElementById('admin-password-input');
     const errorMsg = document.getElementById('admin-login-error');
 
     if (!modal) return;
-    if (input) input.value = '';
+    if (emailInput) {
+        emailInput.value = state.adminEmail || DEFAULT_ADMIN.email;
+    }
+    if (passwordInput) {
+        passwordInput.value = '';
+    }
     if (errorMsg) errorMsg.classList.add('hidden');
 
     modal.classList.remove('hidden');
-    setTimeout(() => input?.focus(), 150);
+    setTimeout(() => {
+        if (emailInput && !emailInput.value) {
+            emailInput.focus();
+        } else if (passwordInput) {
+            passwordInput.focus();
+        }
+    }, 150);
 }
 
 function handleAdminLoginSubmit(e) {
     e.preventDefault();
-    const pinInput = document.getElementById('admin-pin-input');
+    const emailInput = document.getElementById('admin-email-input');
+    const passwordInput = document.getElementById('admin-password-input');
     const errorMsg = document.getElementById('admin-login-error');
-    const enteredPin = (pinInput?.value || '').trim();
 
-    if (enteredPin === state.adminPin) {
+    const enteredEmail = (emailInput?.value || '').toLowerCase().trim();
+    const enteredPassword = (passwordInput?.value || '').trim();
+
+    const expectedEmail = (state.adminEmail || DEFAULT_ADMIN.email).toLowerCase().trim();
+    const expectedPassword = state.adminPassword || DEFAULT_ADMIN.password;
+
+    if (enteredEmail === expectedEmail && enteredPassword === expectedPassword) {
         state.isAdmin = true;
         sessionStorage.setItem('bengkel_is_admin', 'true');
         closeModal();
         updateAdminUI();
-        showToast('Login berhasil! Mode Admin aktif.');
+        showToast('Login berhasil! Selamat datang Admin.');
     } else {
-        if (errorMsg) errorMsg.classList.remove('hidden');
-        if (pinInput) {
-            pinInput.value = '';
-            pinInput.focus();
+        if (errorMsg) {
+            errorMsg.classList.remove('hidden');
+            errorMsg.textContent = '❌ Email atau Password salah! Periksa kembali kredensial Anda.';
+        }
+        if (passwordInput) {
+            passwordInput.value = '';
+            passwordInput.focus();
         }
     }
 }
@@ -609,25 +1483,50 @@ function handleAdminLogout() {
     showToast('Telah keluar dari mode Admin. Mode Kasir aktif.');
 }
 
-function handleSaveAdminPin() {
-    const pinInput = document.getElementById('settings-admin-pin');
-    const newPin = (pinInput?.value || '').trim();
+function handleSaveAdminAccount(e) {
+    if (e) e.preventDefault();
+    const emailInput = document.getElementById('settings-admin-email');
+    const pwdInput = document.getElementById('settings-admin-password');
+    const confirmPwdInput = document.getElementById('settings-admin-confirm-password');
 
-    if (!newPin || newPin.length < 3) {
-        alert('PIN Admin baru minimal 3 karakter!');
+    const newEmail = (emailInput?.value || '').toLowerCase().trim();
+    const newPwd = (pwdInput?.value || '').trim();
+    const confirmPwd = (confirmPwdInput?.value || '').trim();
+
+    if (!newEmail || !newEmail.includes('@') || !newEmail.includes('.')) {
+        alert('Masukkan format alamat email yang valid!');
+        emailInput?.focus();
         return;
     }
 
-    state.adminPin = newPin;
-    localStorage.setItem('bengkel_admin_pin', newPin);
-    if (pinInput) pinInput.value = '';
-    showToast('PIN Admin berhasil diperbarui!');
+    if (newPwd) {
+        if (newPwd.length < 6) {
+            alert('Password admin baru minimal 6 karakter demi keamanan!');
+            pwdInput?.focus();
+            return;
+        }
+        if (newPwd !== confirmPwd) {
+            alert('Konfirmasi password tidak cocok dengan password baru!');
+            confirmPwdInput?.focus();
+            return;
+        }
+        state.adminPassword = newPwd;
+        localStorage.setItem('bengkel_admin_password', newPwd);
+    }
+
+    state.adminEmail = newEmail;
+    localStorage.setItem('bengkel_admin_email', newEmail);
+
+    if (pwdInput) pwdInput.value = '';
+    if (confirmPwdInput) confirmPwdInput.value = '';
+
+    showToast('Kredensial email & password admin berhasil diperbarui!');
 }
 
 // --- TAB SWITCHER ---
 function switchTab(tabId) {
-    // Proteksi: Hanya admin yang boleh membuka menu selain 'pos' (kasir)
-    if (tabId !== 'pos' && !state.isAdmin) {
+    // Proteksi: Hanya admin yang boleh membuka menu kelola selain 'pos', 'catalog', dan 'info'
+    if (tabId !== 'pos' && tabId !== 'catalog' && tabId !== 'info' && !state.isAdmin) {
         openAdminLoginModal();
         return;
     }
@@ -637,11 +1536,11 @@ function switchTab(tabId) {
     // Nav tabs styling
     document.querySelectorAll('[data-tab-target]').forEach(btn => {
         if (btn.getAttribute('data-tab-target') === tabId) {
-            btn.classList.add('bg-blue-600', 'text-white');
-            btn.classList.remove('text-slate-600', 'hover:bg-slate-100');
+            btn.classList.add('bg-blue-600', 'text-white', 'shadow-sm');
+            btn.classList.remove('text-slate-600', 'hover:bg-slate-200/60');
         } else {
-            btn.classList.remove('bg-blue-600', 'text-white');
-            btn.classList.add('text-slate-600', 'hover:bg-slate-100');
+            btn.classList.remove('bg-blue-600', 'text-white', 'shadow-sm');
+            btn.classList.add('text-slate-600', 'hover:bg-slate-200/60');
         }
     });
 
@@ -656,6 +1555,10 @@ function switchTab(tabId) {
         renderPricesTable();
     } else if (tabId === 'history') {
         renderHistory();
+    } else if (tabId === 'info') {
+        renderInfoPanel();
+    } else if (tabId === 'catalog') {
+        renderCatalogPanel();
     }
 }
 
@@ -1196,8 +2099,10 @@ function exportDataJSON() {
         exportedAt: new Date().toISOString(),
         profile: state.profile,
         services: state.services,
+        catalog: state.catalog,
         categories: state.categories,
-        transactions: state.transactions
+        transactions: state.transactions,
+        adminEmail: state.adminEmail
     };
 
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
@@ -1229,6 +2134,14 @@ function importDataJSON(e) {
             if (data.transactions && Array.isArray(data.transactions)) {
                 state.transactions = data.transactions;
                 saveTransactions();
+            }
+            if (data.catalog && Array.isArray(data.catalog)) {
+                state.catalog = data.catalog;
+                saveCatalog();
+            }
+            if (data.adminEmail) {
+                state.adminEmail = data.adminEmail;
+                localStorage.setItem('bengkel_admin_email', data.adminEmail);
             }
             renderAll();
             showToast('Data berhasil diimpor!');
