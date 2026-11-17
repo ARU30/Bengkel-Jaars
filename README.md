@@ -64,6 +64,14 @@ Aplikasi ini dapat langsung dijalankan di browser tanpa perlu server, serta **10
      - **Hapus & Reset Master:** Admin dapat menghapus produk satuan atau mereset ke katalog default 17 produk rekomendasi kapan saja.
      - **Backup & Restore:** Data katalog ban dan oli otomatis ikut tersimpan saat ekspor/impor file JSON bengkel.
 
+9. **🌐 Sinkronisasi Cloud Antar-Perangkat Otomatis (Vercel & Multi-Device Auto-Sync):**
+   - **Otomatis Berubah di Semua Perangkat:** Saat Admin mengubah tarif layanan, menambah produk katalog (seperti ban IRC SS 570F), atau mengedit profil bengkel di laptop, sistem secara otomatis mengirimkan konfigurasi ke Cloud Vercel (`/api/sync`) atau database cloud.
+   - **Perangkat Lain Tidak Perlu Mengulang Konfigurasi:** Saat HP kasir, tablet, atau laptop lain membuka aplikasi di Vercel, sistem otomatis menarik data terbaru di latar belakang (*background sync*) dan memperbarui penyimpanan lokal browser.
+   - **📲 Bagikan Link via WhatsApp (1-Klik):** Admin dapat menyalin atau mengirimkan tautan sinkronisasi instan via WhatsApp ke HP kasir. Kasir cukup mengklik tautan tersebut sekali saja di HP mereka untuk langsung menerapkan seluruh tarif, produk katalog, dan profil tanpa perlu login admin.
+   - **📷 Scan QR Code Sinkronisasi:** Kasir cukup mengarahkan kamera HP ke layar laptop admin untuk scan QR code sinkronisasi instan.
+   - **📥 Unduh Master default-data.js:** Admin dapat mengunduh berkas `default-data.js` yang sudah diperbarui dengan data riil bengkel saat ini. Cukup timpa berkas ini di repositori dan push ke GitHub agar Vercel secara permanen menjadikan data tersebut sebagai bawaan resmi untuk semua pengunjung.
+   - **Dukungan Vercel KV & Firebase:** Mendukung Vercel KV / Upstash Redis bawaan dashboard Vercel, maupun Firebase Realtime Database gratis.
+
 ---
 
 ## 🚀 Cara Menjalankan Langsung di Komputer Anda
@@ -100,11 +108,13 @@ vercel deploy --prod
 ```
 bengkel-calculator/
 ├── index.html           # Tampilan utama antarmuka POS & Kalkulator
+├── api/
+│   └── sync.js          # Endpoint Serverless Vercel: Sinkronisasi Cloud Antar-Perangkat
 ├── css/
 │   └── style.css        # Gaya cetak struk thermal, animasi, & layout
 ├── js/
-│   ├── default-data.js  # Database master tarif awal (Tambal, Bongkar, Cuci)
-│   └── app.js           # Mesin kalkulasi harga, keranjang, localStorage, & WhatsApp
+│   ├── default-data.js  # Database master tarif awal (Tambal, Bongkar, Cuci, Ban & Oli)
+│   └── app.js           # Mesin kalkulasi harga, keranjang, Cloud Sync, & WhatsApp
 ├── vercel.json          # Konfigurasi optimasi server & keamanan Vercel
 ├── package.json         # Metadata proyek
 └── README.md            # Dokumentasi & panduan penggunaan

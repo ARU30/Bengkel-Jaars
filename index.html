@@ -106,26 +106,36 @@
                         </div>
                     </nav>
 
-                    <!-- Tombol Masuk / Keluar Mode Admin -->
-                    <div id="admin-auth-controls" class="flex items-center">
-                        <button id="btn-admin-login" type="button"
-                            class="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200/80 text-slate-700 text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs"
-                            title="Masuk sebagai Admin (Email & Password)">
-                            <span>🔒</span>
-                            <span class="hidden sm:inline">Mode Admin</span>
+                    <!-- Cloud Sync & Tombol Masuk / Keluar Mode Admin -->
+                    <div class="flex items-center gap-2">
+                        <!-- Cloud Sync Status Pill Button -->
+                        <button id="btn-cloud-sync-status" type="button" onclick="openCloudSyncModal()"
+                            class="px-2.5 sm:px-3 py-1.5 sm:py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200/80 text-slate-700 text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs"
+                            title="Status Sinkronisasi Cloud Antar-Perangkat (Vercel & Multi-Device)">
+                            <span id="cloud-sync-dot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span id="cloud-sync-text" class="text-[11px] font-semibold text-slate-700">Cloud Sync</span>
                         </button>
 
-                        <div id="admin-logged-in-bar" class="hidden items-center gap-2">
-                            <span class="hidden md:inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2.5 py-1.5 rounded-xl">
-                                <span>👑</span>
-                                <span>Admin Aktif</span>
-                            </span>
-                            <button id="btn-admin-logout" type="button"
-                                class="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs"
-                                title="Kunci kembali ke mode Kasir / Pengguna biasa">
-                                <span>🚪</span>
-                                <span class="hidden sm:inline">Kunci / Keluar</span>
+                        <div id="admin-auth-controls" class="flex items-center">
+                            <button id="btn-admin-login" type="button"
+                                class="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200/80 text-slate-700 text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs"
+                                title="Masuk sebagai Admin (Email & Password)">
+                                <span>🔒</span>
+                                <span class="hidden sm:inline">Mode Admin</span>
                             </button>
+
+                            <div id="admin-logged-in-bar" class="hidden items-center gap-2">
+                                <span class="hidden md:inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2.5 py-1.5 rounded-xl">
+                                    <span>👑</span>
+                                    <span>Admin Aktif</span>
+                                </span>
+                                <button id="btn-admin-logout" type="button"
+                                    class="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs"
+                                    title="Kunci kembali ke mode Kasir / Pengguna biasa">
+                                    <span>🚪</span>
+                                    <span class="hidden sm:inline">Kunci / Keluar</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1374,6 +1384,93 @@
                             </button>
                         </div>
                     </form>
+
+                    <!-- KARTU SINKRONISASI CLOUD & MULTI-PERANGKAT (VERCEL AUTO-SYNC) -->
+                    <div class="mt-8 pt-6 border-t border-slate-200/80">
+                        <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                            <div class="flex items-center gap-2.5">
+                                <span class="text-2xl">🌐</span>
+                                <div>
+                                    <h3 class="font-extrabold text-sm text-slate-900">Sinkronisasi Cloud & Multi-Perangkat (Vercel)</h3>
+                                    <p class="text-[11px] text-slate-400">Pastikan seluruh tarif, katalog, dan profil seragam otomatis di HP kasir, tablet, dan laptop</p>
+                                </div>
+                            </div>
+                            <span id="settings-cloud-sync-badge" class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                Aktif Otomatis
+                            </span>
+                        </div>
+
+                        <div class="bg-blue-50/70 border border-blue-200/80 rounded-2xl p-4 space-y-3.5 mb-4">
+                            <div class="flex items-start gap-2.5 text-xs text-blue-950">
+                                <span class="text-base">💡</span>
+                                <div class="leading-relaxed">
+                                    <span class="font-bold">Otomatisasi Vercel:</span>
+                                    Saat Anda mengubah tarif, katalog ban/oli, atau profil di menu admin ini, sistem otomatis mengirim data ke Cloud. Perangkat lain (seperti HP kasir) akan langsung memperbarui pengaturannya tanpa perlu mengulang input data.
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                                <button type="button" onclick="syncToCloud('Konfigurasi Lengkap')"
+                                    class="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all active:scale-95">
+                                    <span>☁️</span>
+                                    <span>Unggah Data Ini ke Cloud Sekarang</span>
+                                </button>
+                                <button type="button" onclick="syncFromCloud(false)"
+                                    class="py-2.5 px-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all active:scale-95">
+                                    <span>🔄</span>
+                                    <span>Tarik Data Terbaru dari Cloud</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                            <div class="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col justify-between gap-2.5">
+                                <div>
+                                    <span class="text-xs font-bold text-slate-800 block">📲 Kirim ke HP Kasir via WhatsApp</span>
+                                    <span class="text-[11px] text-slate-500 block mt-0.5">Kirim link 1-klik yang langsung memuat seluruh tarif & katalog di HP kasir tanpa login admin</span>
+                                </div>
+                                <button type="button" onclick="shareSyncWhatsApp()"
+                                    class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs">
+                                    <span>💬</span>
+                                    <span>Bagikan Link via WhatsApp</span>
+                                </button>
+                            </div>
+
+                            <div class="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col justify-between gap-2.5">
+                                <div>
+                                    <span class="text-xs font-bold text-slate-800 block">📥 Perbarui File default-data.js</span>
+                                    <span class="text-[11px] text-slate-500 block mt-0.5">Unduh berkas master terkini untuk ditimpa ke proyek & GitHub agar Vercel memakainya permanen</span>
+                                </div>
+                                <button type="button" onclick="downloadUpdatedDefaultData()"
+                                    class="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs">
+                                    <span>💾</span>
+                                    <span>Unduh default-data.js Terbaru</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Custom Cloud URL Config (Optional for Firebase) -->
+                        <div class="pt-2">
+                            <button type="button" onclick="toggleCloudConfigAdvanced()" class="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1">
+                                <span>⚙️</span>
+                                <span>Pengaturan Lanjutan: Sambungkan Database Cloud Kustom (Firebase / REST)</span>
+                            </button>
+                            <div id="cloud-config-advanced" class="hidden mt-3 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                                <label class="block text-slate-700 text-[11px] font-bold">URL Cloud Sync (Firebase Realtime Database / REST endpoint)</label>
+                                <div class="flex gap-2">
+                                    <input id="settings-cloud-sync-url" type="url" placeholder="https://proyek-anda.firebaseio.com/bengkel.json"
+                                        class="flex-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-mono text-slate-800">
+                                    <button type="button" onclick="saveCustomCloudSyncUrl()"
+                                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shrink-0">
+                                        Simpan URL
+                                    </button>
+                                </div>
+                                <p class="text-[10px] text-slate-500 leading-normal">
+                                    Kosongkan jika sudah menggunakan integrasi serverless bawaan Vercel (<code class="bg-slate-200 px-1 py-0.5 rounded text-slate-800">/api/sync</code>).
+                                </p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -1818,7 +1915,121 @@
         </div>
     </div>
 
-    <!-- HIDDEN THERMAL PRINT AREA ONLY VISIBLE DURING PRINT -->
+    <!-- ============================================================== -->
+    <!-- MODAL: PUSAT SINKRONISASI CLOUD & MULTI-PERANGKAT (VERCEL)      -->
+    <!-- ============================================================== -->
+    <div id="modal-cloud-sync" class="modal-backdrop fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden no-print">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[92vh] overflow-y-auto">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-10 h-10 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-lg">
+                        🌐
+                    </div>
+                    <div>
+                        <h3 class="font-extrabold text-base text-slate-900">Sinkronisasi Cloud Vercel</h3>
+                        <p class="text-[11px] text-slate-400">Sinkronkan data otomatis antar HP kasir, tablet & komputer</p>
+                    </div>
+                </div>
+                <button data-close-modal class="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
+            </div>
+
+            <!-- Ringkasan Status -->
+            <div class="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-slate-600">Status Sinkronisasi</span>
+                    <span id="cloud-modal-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        🟢 Terhubung
+                    </span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-200/60">
+                    <div>
+                        <span class="text-slate-400 block">Terakhir Disinkronkan:</span>
+                        <span id="cloud-modal-time" class="font-bold text-slate-800 block">-</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block">Jumlah Data Bengkel:</span>
+                        <span id="cloud-modal-counts" class="font-bold text-slate-800 block">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tombol Aksi Cloud -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button type="button" onclick="syncFromCloud(false)"
+                    class="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all active:scale-95">
+                    <span>🔄</span>
+                    <span>Tarik Data Terbaru</span>
+                </button>
+                <button type="button" onclick="syncToCloud('Konfigurasi Lengkap')"
+                    class="py-2.5 px-3 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all active:scale-95">
+                    <span>☁️</span>
+                    <span>Unggah Data Ini ke Cloud</span>
+                </button>
+            </div>
+
+            <!-- Solusi Cepat untuk HP Kasir -->
+            <div class="p-4 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl space-y-3">
+                <div class="flex items-center gap-2">
+                    <span class="text-base">📲</span>
+                    <h4 class="font-bold text-xs text-emerald-950">Hubungkan HP Kasir Lain Secara Cepat</h4>
+                </div>
+                <p class="text-[11px] text-emerald-900 leading-relaxed">
+                    Kirim link konfigurasi langsung ke HP kasir via WhatsApp atau scan QR code. Begitu link dibuka di HP kasir, seluruh tarif & katalog langsung diterapkan secara instan tanpa perlu ketik ulang!
+                </p>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <button type="button" onclick="shareSyncWhatsApp()"
+                        class="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs">
+                        <span>💬</span>
+                        <span>Kirim via WA</span>
+                    </button>
+                    <button type="button" onclick="copySyncShareUrl()"
+                        class="flex-1 py-2 px-3 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs">
+                        <span>📋</span>
+                        <span>Salin Link</span>
+                    </button>
+                    <button type="button" onclick="openCloudQrModal()"
+                        class="py-2 px-3 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                        title="Tampilkan QR Code untuk di-scan HP kasir">
+                        <span>📷</span>
+                        <span>Scan QR</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Unduh Master File -->
+            <div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-3">
+                <div class="text-[11px] text-slate-500">
+                    Ingin menjadikan data ini bawaan permanen di Vercel?
+                </div>
+                <button type="button" onclick="downloadUpdatedDefaultData()"
+                    class="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all shrink-0">
+                    <span>💾</span>
+                    <span>Unduh default-data.js</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- MODAL: QR CODE SCAN SINKRONISASI HP KASIR                      -->
+    <!-- ============================================================== -->
+    <div id="modal-cloud-qr" class="modal-backdrop fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden no-print">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl flex flex-col items-center gap-4 text-center">
+            <div class="w-full flex items-center justify-between pb-2 border-b border-slate-100">
+                <h3 class="font-extrabold text-sm text-slate-900">Scan QR Code dari HP Kasir</h3>
+                <button data-close-modal class="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
+            </div>
+            <div class="w-56 h-56 bg-slate-100 border border-slate-200 rounded-2xl flex items-center justify-center overflow-hidden p-2">
+                <img id="cloud-qr-image" src="" alt="QR Code Sinkronisasi" class="w-full h-full object-contain">
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed">
+                Arahkan kamera HP kasir ke QR Code di atas. Halaman aplikasi bengkel akan otomatis terbuka dan seluruh tarif & katalog akan tersinkronkan seketika!
+            </p>
+            <button data-close-modal type="button" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl">
+                Tutup
+            </button>
+        </div>
+    </div>
     <div id="print-receipt-section" class="thermal-receipt"></div>
 
     <!-- APP SCRIPTS -->

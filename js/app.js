@@ -45,6 +45,12 @@ let state = {
     selectedFilterMonth: new Date().getMonth().toString(), // '0'..'11' or 'all'
     selectedFilterYear: new Date().getFullYear(),
     
+    // Cloud Synchronization State (Vercel & Multi-Device)
+    cloudSyncStatus: 'synced', // 'synced' | 'syncing' | 'offline' | 'error'
+    cloudSyncUrl: localStorage.getItem('bengkel_cloud_sync_url') || '',
+    lastSyncTime: localStorage.getItem('bengkel_last_sync_time') ? Number(localStorage.getItem('bengkel_last_sync_time')) : null,
+    autoSyncEnabled: true,
+
     // Modals
     activeModal: null // 'customItem' | 'newService' | 'editService' | 'receipt' | 'editProfile'
 };
@@ -99,6 +105,11 @@ function loadData() {
         state.adminEmail = (savedAdminEmail || DEFAULT_ADMIN.email).toLowerCase().trim();
         state.adminPassword = savedAdminPassword || DEFAULT_ADMIN.password;
 
+        const savedCloudUrl = localStorage.getItem('bengkel_cloud_sync_url');
+        if (savedCloudUrl) state.cloudSyncUrl = savedCloudUrl;
+        const savedLastSync = localStorage.getItem('bengkel_last_sync_time');
+        if (savedLastSync) state.lastSyncTime = Number(savedLastSync);
+
         // Check if admin is currently logged in in this session
         state.isAdmin = sessionStorage.getItem('bengkel_is_admin') === 'true';
     } catch (e) {
@@ -113,18 +124,386 @@ function loadData() {
 
 function saveProfile() {
     localStorage.setItem('bengkel_profile', JSON.stringify(state.profile));
+    triggerAutoSyncToCloud('Profil Bengkel');
 }
 
 function saveServices() {
     localStorage.setItem('bengkel_services', JSON.stringify(state.services));
+    triggerAutoSyncToCloud('Tarif Layanan');
 }
 
 function saveCatalog() {
     localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
+    triggerAutoSyncToCloud('Katalog Ban & Oli');
 }
 
 function saveTransactions() {
     localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
+}
+
+// --- CLOUD SYNC & MULTI-DEVICE SYNCHRONIZATION (VERCEL) ---
+let autoSyncDebounceTimer = null;
+function triggerAutoSyncToCloud(label = 'Perubahan data') {
+    if (!state.autoSyncEnabled) return;
+    if (autoSyncDebounceTimer) clearTimeout(autoSyncDebounceTimer);
+    autoSyncDebounceTimer = setTimeout(() => {
+        syncToCloud(label);
+    }, 1200);
+}
+
+function checkUrlSyncPayload() {
+    try {
+        const hash = window.location.hash || '';
+        if (!hash.includes('sync=')) return false;
+
+        const raw = hash.substring(hash.indexOf('sync=') + 5);
+        if (!raw) return false;
+
+        const jsonStr = decodeURIComponent(escape(atob(raw)));
+        const data = JSON.parse(jsonStr);
+
+        if (data && typeof data === 'object') {
+            if (data.profile) {
+                state.profile = { ...DEFAULT_PROFILE, ...data.profile };
+                localStorage.setItem('bengkel_profile', JSON.stringify(state.profile));
+            }
+            if (Array.isArray(data.services) && data.services.length > 0) {
+                state.services = data.services;
+                localStorage.setItem('bengkel_services', JSON.stringify(state.services));
+            }
+            if (Array.isArray(data.catalog) && data.catalog.length > 0) {
+                state.catalog = data.catalog;
+                localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
+            }
+            if (data.adminEmail) {
+                state.adminEmail = data.adminEmail;
+                state.adminPassword = data.adminPassword || state.adminPassword;
+                localStorage.setItem('bengkel_admin_email', state.adminEmail);
+                localStorage.setItem('bengkel_admin_password', state.adminPassword);
+            }
+            state.lastSyncTime = data.updatedAt || Date.now();
+            localStorage.setItem('bengkel_last_sync_time', String(state.lastSyncTime));
+
+            if (window.history && window.history.replaceState) {
+                window.history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
+
+            setTimeout(() => {
+                showToast('🎉 Selamat! Seluruh tarif, katalog, dan profil bengkel berhasil disinkronkan ke perangkat ini!');
+            }, 600);
+            return true;
+        }
+    } catch (err) {
+        console.error('[URL Sync Error]:', err);
+    }
+    return false;
+}
+
+async function syncFromCloud(silent = false) {
+    updateCloudSyncIndicator('syncing', 'Menyinkronkan data...');
+
+    let cloudData = null;
+    let source = '';
+
+    // 1. Coba dari Vercel Serverless Endpoint /api/sync
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            cache: 'no-store'
+        });
+        if (res.ok) {
+            const json = await res.json();
+            if (json && json.success && json.synced && json.data) {
+                cloudData = json.data;
+                source = json.storage || 'Cloud Vercel';
+            }
+        }
+    } catch (e) {
+        // Mode offline / dev lokal
+    }
+
+    // 2. Coba dari Custom Cloud Sync URL (misal Firebase Realtime Database)
+    if (!cloudData && state.cloudSyncUrl) {
+        try {
+            const cleanUrl = state.cloudSyncUrl.endsWith('.json') ? state.cloudSyncUrl : `${state.cloudSyncUrl.replace(/\/+$/, '')}/bengkel_sync.json`;
+            const res = await fetch(cleanUrl, { cache: 'no-store' });
+            if (res.ok) {
+                const json = await res.json();
+                if (json && (json.services || json.catalog || json.profile)) {
+                    cloudData = json;
+                    source = 'Database Cloud (Firebase/REST)';
+                }
+            }
+        } catch (e) {
+            console.warn('[Custom Cloud DB Error]:', e);
+        }
+    }
+
+    if (cloudData) {
+        let changed = false;
+        if (cloudData.profile) {
+            state.profile = { ...DEFAULT_PROFILE, ...cloudData.profile };
+            localStorage.setItem('bengkel_profile', JSON.stringify(state.profile));
+            changed = true;
+        }
+        if (Array.isArray(cloudData.services) && cloudData.services.length > 0) {
+            state.services = cloudData.services;
+            localStorage.setItem('bengkel_services', JSON.stringify(state.services));
+            changed = true;
+        }
+        if (Array.isArray(cloudData.catalog) && cloudData.catalog.length > 0) {
+            state.catalog = cloudData.catalog;
+            localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
+            changed = true;
+        }
+        if (cloudData.adminEmail) {
+            state.adminEmail = cloudData.adminEmail;
+            state.adminPassword = cloudData.adminPassword || state.adminPassword;
+            localStorage.setItem('bengkel_admin_email', state.adminEmail);
+            localStorage.setItem('bengkel_admin_password', state.adminPassword);
+            changed = true;
+        }
+
+        state.lastSyncTime = cloudData.updatedAt || Date.now();
+        localStorage.setItem('bengkel_last_sync_time', String(state.lastSyncTime));
+
+        if (changed) {
+            renderAll();
+        }
+
+        updateCloudSyncIndicator('synced', `Cloud Aktif (${source})`);
+        if (!silent) {
+            showToast(`✅ Berhasil mengambil data terbaru dari ${source}!`);
+        }
+        renderCloudSyncModalDetails();
+        return true;
+    } else {
+        updateCloudSyncIndicator('synced', 'Penyimpanan Lokal Aktif');
+        renderCloudSyncModalDetails();
+        return false;
+    }
+}
+
+async function syncToCloud(triggerLabel = 'Konfigurasi') {
+    updateCloudSyncIndicator('syncing', 'Mengunggah ke Cloud...');
+
+    const payload = {
+        updatedAt: Date.now(),
+        updatedBy: state.profile?.name || 'Admin JAARS',
+        profile: state.profile,
+        services: state.services,
+        catalog: state.catalog,
+        adminEmail: state.adminEmail || DEFAULT_ADMIN.email,
+        adminPassword: state.adminPassword || DEFAULT_ADMIN.password
+    };
+
+    let saved = false;
+    let target = '';
+
+    // 1. Simpan ke /api/sync (Vercel Serverless)
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            const json = await res.json();
+            if (json && json.success) {
+                saved = true;
+                target = (json.savedIn || []).join(', ') || 'Vercel KV';
+            }
+        }
+    } catch (e) {
+        // Endpoint tidak tersedia / offline
+    }
+
+    // 2. Simpan ke Custom Cloud Database jika dikonfigurasi
+    if (state.cloudSyncUrl) {
+        try {
+            const cleanUrl = state.cloudSyncUrl.endsWith('.json') ? state.cloudSyncUrl : `${state.cloudSyncUrl.replace(/\/+$/, '')}/bengkel_sync.json`;
+            const res = await fetch(cleanUrl, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                saved = true;
+                target = target ? `${target} & Cloud DB` : 'Cloud DB (Firebase/REST)';
+            }
+        } catch (e) {
+            console.warn('[Custom Cloud Save Error]:', e);
+        }
+    }
+
+    state.lastSyncTime = payload.updatedAt;
+    localStorage.setItem('bengkel_last_sync_time', String(state.lastSyncTime));
+
+    if (saved) {
+        updateCloudSyncIndicator('synced', `Tersinkron Cloud (${target})`);
+        renderCloudSyncModalDetails();
+        showToast(`☁️ ${triggerLabel} berhasil disinkronkan ke Cloud Vercel!`);
+    } else {
+        updateCloudSyncIndicator('synced', 'Tersimpan di Perangkat Ini');
+        renderCloudSyncModalDetails();
+    }
+}
+
+function initCloudSync() {
+    updateCloudSyncIndicator('synced', 'Penyimpanan Lokal Aktif');
+    renderCloudSyncModalDetails();
+
+    // Jalankan sinkronisasi awal di background
+    setTimeout(() => {
+        syncFromCloud(true);
+    }, 400);
+
+    // Sinkronisasi otomatis saat kasir kembali ke tab / membuka kembali HP
+    window.addEventListener('focus', () => {
+        syncFromCloud(true);
+    });
+
+    // Cek berkala setiap 60 detik jika halaman terbuka
+    setInterval(() => {
+        syncFromCloud(true);
+    }, 60000);
+}
+
+function generateSyncSharePayload() {
+    const payload = {
+        updatedAt: Date.now(),
+        profile: state.profile,
+        services: state.services,
+        catalog: state.catalog,
+        adminEmail: state.adminEmail || DEFAULT_ADMIN.email,
+        adminPassword: state.adminPassword || DEFAULT_ADMIN.password
+    };
+    const jsonStr = JSON.stringify(payload);
+    return btoa(unescape(encodeURIComponent(jsonStr)));
+}
+
+function generateSyncShareUrl() {
+    const b64 = generateSyncSharePayload();
+    const base = window.location.href.split('#')[0];
+    return `${base}#sync=${b64}`;
+}
+
+function copySyncShareUrl() {
+    const url = generateSyncShareUrl();
+    copyToClipboard(url, 'Link Sinkronisasi Kasir');
+    showToast('📋 Link sinkronisasi tersalin! Kirim via WhatsApp ke HP kasir Anda.');
+}
+
+function shareSyncWhatsApp() {
+    const url = generateSyncShareUrl();
+    const bengkelName = state.profile?.name || 'Bengkel JAARS';
+    const msg = `Halo Kasir *${bengkelName}*,\n\nBerikut link pengaturan tarif, katalog ban & oli, serta profil terbaru bengkel:\n\n🔗 ${url}\n\n*Petunjuk Kasir:*\nCukup klik link di atas di HP atau tablet kasir sekali saja. Seluruh tarif dan produk katalog langsung aktif seketika tanpa perlu login admin! 🚀`;
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, '_blank');
+}
+
+function openCloudQrModal() {
+    const url = generateSyncShareUrl();
+    const qrImg = document.getElementById('cloud-qr-image');
+    if (qrImg) {
+        qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(url)}`;
+    }
+    const modal = document.getElementById('modal-cloud-qr');
+    if (modal) modal.classList.remove('hidden');
+}
+
+function openCloudSyncModal() {
+    renderCloudSyncModalDetails();
+    const modal = document.getElementById('modal-cloud-sync');
+    if (modal) modal.classList.remove('hidden');
+}
+
+function updateCloudSyncIndicator(status, text) {
+    const dot = document.getElementById('cloud-sync-dot');
+    const label = document.getElementById('cloud-sync-text');
+    const badge = document.getElementById('settings-cloud-sync-badge');
+
+    if (dot) {
+        if (status === 'syncing') {
+            dot.className = 'w-2 h-2 rounded-full bg-blue-500 animate-spin';
+        } else if (status === 'error') {
+            dot.className = 'w-2 h-2 rounded-full bg-rose-500';
+        } else {
+            dot.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
+        }
+    }
+    if (label && text) {
+        label.textContent = text.length > 25 ? text.slice(0, 25) + '...' : text;
+    }
+    if (badge && text) {
+        badge.textContent = text;
+    }
+}
+
+function renderCloudSyncModalDetails() {
+    const timeEl = document.getElementById('cloud-modal-time');
+    const countsEl = document.getElementById('cloud-modal-counts');
+    const urlInput = document.getElementById('settings-cloud-sync-url');
+
+    if (timeEl) {
+        timeEl.textContent = state.lastSyncTime ? formatDate(new Date(state.lastSyncTime).toISOString()) : 'Baru saja';
+    }
+    if (countsEl) {
+        const sCount = (state.services || []).length;
+        const cCount = (state.catalog || []).length;
+        countsEl.textContent = `${sCount} Tarif • ${cCount} Produk Katalog`;
+    }
+    if (urlInput && !urlInput.value) {
+        urlInput.value = state.cloudSyncUrl || '';
+    }
+}
+
+function toggleCloudConfigAdvanced() {
+    const el = document.getElementById('cloud-config-advanced');
+    if (el) el.classList.toggle('hidden');
+}
+
+function saveCustomCloudSyncUrl() {
+    const input = document.getElementById('settings-cloud-sync-url');
+    if (!input) return;
+    const val = input.value.trim();
+    state.cloudSyncUrl = val;
+    localStorage.setItem('bengkel_cloud_sync_url', val);
+    showToast('✅ URL Database Cloud Kustom berhasil disimpan!');
+    syncFromCloud(false);
+}
+
+function downloadUpdatedDefaultData() {
+    const jsContent = `// js/default-data.js
+// Master Data Bengkel JAARS - Diperbarui Otomatis dari Admin
+// Tanggal Update: ${new Date().toLocaleString('id-ID')}
+
+const DEFAULT_PROFILE = ${JSON.stringify(state.profile, null, 4)};
+
+const DEFAULT_ADMIN = {
+    email: ${JSON.stringify(state.adminEmail || DEFAULT_ADMIN.email)},
+    password: ${JSON.stringify(state.adminPassword || DEFAULT_ADMIN.password)}
+};
+
+const DEFAULT_CATEGORIES = ${JSON.stringify(state.categories || DEFAULT_CATEGORIES, null, 4)};
+
+const DEFAULT_SERVICES = ${JSON.stringify(state.services, null, 4)};
+
+const DEFAULT_CATALOG = ${JSON.stringify(state.catalog, null, 4)};
+`;
+
+    const blob = new Blob([jsContent], { type: 'text/javascript;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'default-data.js';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('📥 Berkas default-data.js terbaru berhasil diunduh! Timpa berkas ini ke repositori proyek & push ke GitHub agar Vercel otomatis memakai data ini secara permanen.');
 }
 
 // --- CALCULATION LOGIC ---
@@ -154,10 +533,12 @@ function calculateTotals() {
 
 // --- INITIALIZE & EVENT LISTENERS ---
 document.addEventListener('DOMContentLoaded', () => {
+    checkUrlSyncPayload();
     loadData();
     initUI();
     renderAll();
     startClock();
+    initCloudSync();
 });
 
 function startClock() {
@@ -1382,6 +1763,17 @@ window.inquireCatalogWhatsApp = inquireCatalogWhatsApp;
 window.addCatalogItemToCart = addCatalogItemToCart;
 window.handleCatalogImgError = handleCatalogImgError;
 
+// Cloud Sync Window Exports
+window.openCloudSyncModal = openCloudSyncModal;
+window.openCloudQrModal = openCloudQrModal;
+window.syncFromCloud = syncFromCloud;
+window.syncToCloud = syncToCloud;
+window.copySyncShareUrl = copySyncShareUrl;
+window.shareSyncWhatsApp = shareSyncWhatsApp;
+window.downloadUpdatedDefaultData = downloadUpdatedDefaultData;
+window.saveCustomCloudSyncUrl = saveCustomCloudSyncUrl;
+window.toggleCloudConfigAdvanced = toggleCloudConfigAdvanced;
+
 // --- ADMIN MODE MANAGER ---
 function updateAdminUI() {
     const navGroup = document.getElementById('admin-nav-group');
@@ -1520,6 +1912,7 @@ function handleSaveAdminAccount(e) {
     if (pwdInput) pwdInput.value = '';
     if (confirmPwdInput) confirmPwdInput.value = '';
 
+    triggerAutoSyncToCloud('Akun Admin');
     showToast('Kredensial email & password admin berhasil diperbarui!');
 }
 
