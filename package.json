@@ -1,0 +1,19 @@
+{
+  "name": "kalkulator-bengkel-ban-cuci",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Aplikasi kalkulasi harga dan kalkulator kasir bengkel tambal ban, bongkar roda, dan cuci kendaraan mobil/motor siap deploy ke Vercel.",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "keywords": [
+    "bengkel",
+    "kalkulator",
+    "tambal-ban",
+    "cuci-mobil",
+    "cuci-motor",
+    "pos",
+    "vercel"
+  ],
+  "license": "MIT"
+}

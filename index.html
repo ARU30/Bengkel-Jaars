@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kalkulator Bengkel Ban & Cuci Kendaraan</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Google Fonts Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen flex flex-col selection:bg-blue-500 selection:text-white">
+
+    <!-- TOP NAVIGATION BAR -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16 gap-4">
+                <!-- Brand Title -->
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20 text-xl font-bold">
+                        🛞
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 id="header-bengkel-name" class="font-extrabold text-base sm:text-lg text-slate-900 leading-tight">
+                                Bengkel Ban & Cuci
+                            </h1>
+                            <span class="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full uppercase">
+                                Vercel Ready
+                            </span>
+                        </div>
+                        <p id="header-bengkel-tagline" class="text-xs text-slate-500 hidden sm:block">
+                            Tambal Ban, Bongkar Roda & Cuci Kendaraan
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <nav class="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/80">
+                    <button data-tab-target="pos" 
+                        class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all bg-blue-600 text-white shadow-sm">
+                        <span>🧮</span>
+                        <span class="hidden md:inline">Kasir &</span> Kalkulator
+                    </button>
+                    <button data-tab-target="prices" 
+                        class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-slate-600 hover:bg-slate-200/60 transition-all">
+                        <span>⚙️</span>
+                        <span>Kelola Tarif</span>
+                    </button>
+                    <button data-tab-target="history" 
+                        class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-slate-600 hover:bg-slate-200/60 transition-all">
+                        <span>📊</span>
+                        <span class="hidden md:inline">Laporan &</span> Riwayat
+                    </button>
+                    <button data-tab-target="settings" 
+                        class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-slate-600 hover:bg-slate-200/60 transition-all">
+                        <span>🏢</span>
+                        <span class="hidden md:inline">Profil</span>
+                    </button>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- SUBHEADER / STATUS BAR -->
+    <div class="bg-slate-900 text-slate-300 text-xs py-1.5 px-4 no-print border-b border-slate-800">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Bengkel Aktif</span>
+                <span class="text-slate-600">|</span>
+                <span id="header-bengkel-phone" class="font-mono text-slate-400">081234567890</span>
+            </div>
+            <div id="live-clock" class="font-mono text-slate-400">
+                Memuat waktu...
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APP CONTENT -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 no-print">
+
+        <!-- ============================================================== -->
+        <!-- PANEL 1: POS / KALKULATOR UTAMA                                -->
+        <!-- ============================================================== -->
+        <section id="panel-pos" class="tab-content-panel">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+                <!-- LEFT SIDE: VEHICLE SWITCHER, SEARCH, CATEGORIES & CATALOG (Cols: 7/12) -->
+                <div class="lg:col-span-7 xl:col-span-8 flex flex-col gap-4">
+
+                    <!-- Vehicle Toggle & Actions Bar -->
+                    <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <!-- Vehicle Switcher -->
+                        <div class="flex items-center gap-2 w-full sm:w-auto">
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-wide mr-1">Kendaraan:</span>
+                            <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto">
+                                <button id="btn-vehicle-motor" type="button"
+                                    class="flex-1 sm:flex-none px-4 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all bg-blue-600 text-white shadow-md">
+                                    <span>🛵</span>
+                                    <span>Motor</span>
+                                </button>
+                                <button id="btn-vehicle-mobil" type="button"
+                                    class="flex-1 sm:flex-none px-4 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all bg-white text-slate-700 hover:bg-slate-50">
+                                    <span>🚗</span>
+                                    <span>Mobil</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Add Custom Item On-the-fly -->
+                        <div class="w-full sm:w-auto flex justify-end">
+                            <button id="btn-add-custom-item" type="button"
+                                class="w-full sm:w-auto px-3.5 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl border border-blue-200 flex items-center justify-center gap-1.5 transition-all">
+                                <span>➕</span>
+                                <span>Item Bebas / Tambahan</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Search & Filter Category -->
+                    <div class="flex flex-col gap-3">
+                        <!-- Search Box -->
+                        <div class="relative">
+                            <input id="search-service-input" type="text"
+                                placeholder="Cari layanan (tambal tubeless, bongkar ban, cuci salju, pentil...)"
+                                class="w-full pl-10 pr-4 py-2.5 text-sm bg-white rounded-2xl border border-slate-200 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all shadow-xs">
+                            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                            </div>
+                        </div>
+
+                        <!-- Horizontal Scroll Category Pills -->
+                        <div id="category-filter-bar" class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Services / Catalog Grid -->
+                    <div id="catalog-items-grid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5 mt-1">
+                        <!-- Populated dynamically by JS -->
+                    </div>
+
+                </div>
+
+                <!-- RIGHT SIDE: BILLING & CHECKOUT (Cols: 5/12) -->
+                <div class="lg:col-span-5 xl:col-span-4">
+                    <div class="bg-white rounded-3xl border border-slate-200/90 shadow-lg p-5 sticky top-20 flex flex-col gap-4">
+
+                        <!-- Struk Header Info -->
+                        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div>
+                                <h2 class="font-extrabold text-base text-slate-900 flex items-center gap-2">
+                                    <span>🧾 Nota / Struk Biaya</span>
+                                </h2>
+                                <p class="text-[11px] text-slate-400">Kalkulasi biaya bengkel otomatis</p>
+                            </div>
+                            <span id="cart-count-badge" class="px-2.5 py-1 text-xs font-bold bg-blue-100 text-blue-700 rounded-full">
+                                0 item
+                            </span>
+                        </div>
+
+                        <!-- Customer & Plate Input -->
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                                <label class="block font-semibold text-slate-600 mb-1">Plat Nomor</label>
+                                <input id="input-plate-number" type="text" placeholder="B 1234 XYZ"
+                                    class="w-full px-2.5 py-2 uppercase font-mono font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block font-semibold text-slate-600 mb-1">Nama Pelanggan</label>
+                                <input id="input-customer-name" type="text" placeholder="Bpk. Budi"
+                                    class="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none">
+                            </div>
+                        </div>
+
+                        <!-- Cart Items Scroll List -->
+                        <div class="border border-slate-100 rounded-2xl p-2 bg-slate-50/50">
+                            <div id="cart-items-container" class="max-h-56 overflow-y-auto flex flex-col gap-2 pr-1">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+
+                        <!-- Catatan Tambahan -->
+                        <div>
+                            <input id="input-order-notes" type="text" placeholder="Catatan pekerjaan (misal: ban bocor samping, velg lecet...)"
+                                class="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none text-slate-600">
+                        </div>
+
+                        <!-- Diskon Setting -->
+                        <div class="p-2.5 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center gap-2 text-xs">
+                            <span class="font-bold text-slate-600 shrink-0">Diskon:</span>
+                            <select id="discount-type" class="px-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none">
+                                <option value="nominal">Rp (Nominal)</option>
+                                <option value="percent">% (Persen)</option>
+                            </select>
+                            <input id="discount-value" type="number" min="0" value="0"
+                                class="w-full px-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold text-right focus:outline-none focus:border-blue-500">
+                        </div>
+
+                        <!-- Ringkasan Perhitungan (Totals) -->
+                        <div class="space-y-1.5 pt-1 text-xs">
+                            <div class="flex items-center justify-between text-slate-500">
+                                <span>Subtotal</span>
+                                <span id="summary-subtotal" class="font-semibold text-slate-800">Rp 0</span>
+                            </div>
+                            <div class="flex items-center justify-between text-rose-500">
+                                <span>Potongan Diskon</span>
+                                <span id="summary-discount" class="font-semibold">- Rp 0</span>
+                            </div>
+                            <div class="flex items-center justify-between pt-2 border-t border-slate-200 text-sm font-bold text-slate-900">
+                                <span class="text-base font-extrabold text-slate-800">TOTAL BAYAR</span>
+                                <span id="summary-grandtotal" class="text-xl font-black text-blue-600">Rp 0</span>
+                            </div>
+                        </div>
+
+                        <!-- Metode Pembayaran -->
+                        <div class="pt-2 border-t border-slate-100">
+                            <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Metode Pembayaran</label>
+                            <div class="grid grid-cols-4 gap-1.5 text-xs font-bold">
+                                <label class="cursor-pointer">
+                                    <input type="radio" name="payment-method" value="cash" checked class="peer sr-only">
+                                    <div class="py-2 text-center rounded-xl border border-slate-200 text-slate-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-all">
+                                        Tunai
+                                    </div>
+                                </label>
+                                <label class="cursor-pointer">
+                                    <input type="radio" name="payment-method" value="qris" class="peer sr-only">
+                                    <div class="py-2 text-center rounded-xl border border-slate-200 text-slate-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-all">
+                                        QRIS
+                                    </div>
+                                </label>
+                                <label class="cursor-pointer">
+                                    <input type="radio" name="payment-method" value="transfer" class="peer sr-only">
+                                    <div class="py-2 text-center rounded-xl border border-slate-200 text-slate-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-all">
+                                        Transfer
+                                    </div>
+                                </label>
+                                <label class="cursor-pointer">
+                                    <input type="radio" name="payment-method" value="bon" class="peer sr-only">
+                                    <div class="py-2 text-center rounded-xl border border-slate-200 text-slate-600 peer-checked:bg-amber-600 peer-checked:text-white peer-checked:border-amber-600 transition-all">
+                                        Bon
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Perhitungan Tunai & Kembalian (Cash Calculator) -->
+                        <div id="cash-calculation-section" class="flex flex-col gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="font-bold text-slate-700">Uang Diterima:</span>
+                                <div class="relative w-36">
+                                    <span class="absolute inset-y-0 left-0 pl-2 flex items-center text-xs text-slate-400 font-bold">Rp</span>
+                                    <input id="cash-input" type="number" min="0" placeholder="0"
+                                        class="w-full pl-8 pr-2 py-1.5 text-xs font-bold text-right bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500">
+                                </div>
+                            </div>
+
+                            <!-- Tombol Cepat Pecahan Uang -->
+                            <div class="grid grid-cols-4 gap-1 text-[11px] font-bold">
+                                <button type="button" class="btn-quick-cash py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700" data-amount="exact">Pas</button>
+                                <button type="button" class="btn-quick-cash py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700" data-amount="20000">20rb</button>
+                                <button type="button" class="btn-quick-cash py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700" data-amount="50000">50rb</button>
+                                <button type="button" class="btn-quick-cash py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700" data-amount="100000">100rb</button>
+                            </div>
+
+                            <!-- Display Kembalian -->
+                            <div id="change-display-box" class="flex items-center justify-between pt-2 border-t border-slate-200/60">
+                                <span class="text-xs font-bold text-slate-600">Kembalian:</span>
+                                <span id="summary-change" class="text-base font-extrabold text-emerald-600">Rp 0</span>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="flex flex-col gap-2 pt-1">
+                            <button id="btn-checkout" type="button"
+                                class="w-full py-3.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-extrabold text-sm rounded-2xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition-all transform active:scale-98">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                                <span>Selesaikan & Cetak Struk</span>
+                            </button>
+
+                            <button id="btn-clear-cart" type="button"
+                                class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-all">
+                                🗑️ Kosongkan Nota
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- PANEL 2: KELOLA TARIF & INPUT HARGA MANDIRI                    -->
+        <!-- ============================================================== -->
+        <section id="panel-prices" class="tab-content-panel hidden">
+            <div class="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 flex flex-col gap-6">
+
+                <!-- Header & Actions -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                    <div>
+                        <h2 class="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                            <span>⚙️ Manajemen Tarif & Input Harga Mandiri</span>
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-1 max-w-2xl">
+                            Atur dan sesuaikan harga tarif tambal ban, bongkar roda, cuci mobil/motor, dan sparepart sesuai ketentuan bengkel Anda. Semua data disimpan di peramban dan siap dideploy ke Vercel.
+                        </p>
+                    </div>
+
+                    <!-- Toolbar Buttons -->
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button id="btn-add-service-master" type="button"
+                            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all">
+                            <span>➕ Tambah Layanan Baru</span>
+                        </button>
+                        <button id="btn-export-data" type="button"
+                            class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5">
+                            <span>💾 Cadangkan (JSON)</span>
+                        </button>
+                        <label class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5">
+                            <span>📥 Pulihkan Data</span>
+                            <input id="input-import-data" type="file" accept=".json" class="hidden">
+                        </label>
+                        <button id="btn-reset-default-prices" type="button"
+                            class="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold rounded-xl transition-all">
+                            🔄 Reset ke Default
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Search Table -->
+                <div class="flex items-center justify-between gap-4">
+                    <div class="relative w-full max-w-md">
+                        <input id="search-master-price" type="text" oninput="renderPricesTable()"
+                            placeholder="Cari tarif layanan..."
+                            class="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table of Services -->
+                <div class="overflow-x-auto rounded-2xl border border-slate-200">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 font-extrabold border-b border-slate-200">
+                                <th class="px-4 py-3">No</th>
+                                <th class="px-4 py-3">Nama Layanan / Barang</th>
+                                <th class="px-4 py-3">Kategori</th>
+                                <th class="px-4 py-3">Satuan</th>
+                                <th class="px-4 py-3">Tarif Motor</th>
+                                <th class="px-4 py-3">Tarif Mobil</th>
+                                <th class="px-4 py-3 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="master-prices-tbody" class="divide-y divide-slate-100 text-xs">
+                            <!-- Populated dynamically by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- PANEL 3: LAPORAN & RIWAYAT TRANSAKSI                           -->
+        <!-- ============================================================== -->
+        <section id="panel-history" class="tab-content-panel hidden">
+            <div class="flex flex-col gap-6">
+
+                <!-- KPI Cards -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                        <div>
+                            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Omset</div>
+                            <div id="stat-total-omset" class="text-2xl font-black text-slate-900 mt-1">Rp 0</div>
+                        </div>
+                        <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl">
+                            💰
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                        <div>
+                            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Jumlah Transaksi</div>
+                            <div id="stat-total-tx" class="text-2xl font-black text-slate-900 mt-1">0 Transaksi</div>
+                        </div>
+                        <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl">
+                            🧾
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                        <div>
+                            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Rata-rata Transaksi</div>
+                            <div id="stat-avg-tx" class="text-2xl font-black text-slate-900 mt-1">Rp 0</div>
+                        </div>
+                        <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl">
+                            📈
+                        </div>
+                    </div>
+                </div>
+
+                <!-- History List Card -->
+                <div class="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                        <div>
+                            <h2 class="text-lg font-extrabold text-slate-900">Riwayat Transaksi</h2>
+                            <p class="text-xs text-slate-400">Daftar transaksi bengkel yang telah selesai</p>
+                        </div>
+
+                        <!-- Filter Time -->
+                        <div class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                            <button data-history-filter="today" class="px-3 py-1.5 rounded-lg active bg-blue-600 text-white transition-all">Hari Ini</button>
+                            <button data-history-filter="week" class="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-all">7 Hari</button>
+                            <button data-history-filter="month" class="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-all">Bulan Ini</button>
+                            <button data-history-filter="all" class="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-all">Semua</button>
+                        </div>
+                    </div>
+
+                    <!-- List Container -->
+                    <div id="history-list-container" class="flex flex-col gap-3">
+                        <!-- Populated dynamically by JS -->
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- PANEL 4: PENGATURAN BENGKEL & PROFIL                           -->
+        <!-- ============================================================== -->
+        <section id="panel-settings" class="tab-content-panel hidden">
+            <div class="max-w-2xl mx-auto bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8">
+                <div class="pb-4 border-b border-slate-100 mb-6">
+                    <h2 class="text-xl font-extrabold text-slate-900">🏢 Pengaturan Identitas Bengkel</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Informasi ini akan tercetak di struk nota kasir dan teks WhatsApp pelanggan.</p>
+                </div>
+
+                <form id="form-bengkel-profile" class="space-y-4 text-xs font-semibold">
+                    <div>
+                        <label class="block text-slate-700 mb-1">Nama Bengkel / Usaha</label>
+                        <input id="settings-name" type="text" required
+                            class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 font-bold text-slate-900">
+                    </div>
+
+                    <div>
+                        <label class="block text-slate-700 mb-1">Slogan / Keterangan Singkat</label>
+                        <input id="settings-tagline" type="text"
+                            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 text-slate-700">
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-slate-700 mb-1">Nomor WhatsApp / Telepon Bengkel</label>
+                            <input id="settings-phone" type="text"
+                                class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 font-mono text-slate-800">
+                        </div>
+                        <div>
+                            <label class="block text-slate-700 mb-1">Alamat Bengkel</label>
+                            <input id="settings-address" type="text"
+                                class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 text-slate-700">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-slate-700 mb-1">Pesan Kaki Struk (Receipt Footer)</label>
+                        <textarea id="settings-receipt-footer" rows="2"
+                            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 text-slate-700"></textarea>
+                    </div>
+
+                    <div class="pt-4">
+                        <button type="submit"
+                            class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-sm rounded-xl shadow-md transition-all">
+                            Simpan Perubahan Profil
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-white border-t border-slate-200 text-slate-400 text-xs py-4 text-center no-print">
+        <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <span>Aplikasi Kalkulator Bengkel Tambal Ban & Cuci Kendaraan</span>
+            <span>Deploy siap pakai di <a href="https://vercel.com" target="_blank" class="font-bold text-slate-700 hover:underline">Vercel</a></span>
+        </div>
+    </footer>
+
+    <!-- ============================================================== -->
+    <!-- MODAL: RECEIPT PRINT & WHATSAPP SHARING                        -->
+    <!-- ============================================================== -->
+    <div id="modal-receipt" class="modal-backdrop fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden no-print">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h3 class="font-extrabold text-base text-slate-900">Nota Selesai Dibuat</h3>
+                <button data-close-modal class="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
+            </div>
+
+            <!-- Receipt Preview Area -->
+            <div id="receipt-print-area">
+                <!-- Injected by JS -->
+            </div>
+
+            <!-- Modal Action Buttons -->
+            <div class="grid grid-cols-2 gap-2 pt-2">
+                <button id="btn-print-receipt" type="button"
+                    class="py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow flex items-center justify-center gap-1.5 transition-all">
+                    <span>🖨️</span>
+                    <span>Cetak Struk</span>
+                </button>
+                <button id="btn-send-whatsapp" type="button"
+                    class="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow flex items-center justify-center gap-1.5 transition-all">
+                    <span>💬</span>
+                    <span>Kirim ke WhatsApp</span>
+                </button>
+            </div>
+
+            <button data-close-modal type="button"
+                class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all">
+                Tutup & Transaksi Baru
+            </button>
+        </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- MODAL: ADD CUSTOM ITEM ON-THE-FLY                              -->
+    <!-- ============================================================== -->
+    <div id="modal-custom-item" class="modal-backdrop fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden no-print">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl flex flex-col gap-4">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h3 class="font-extrabold text-base text-slate-900">Tambah Item Bebas / Khusus</h3>
+                <button data-close-modal class="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
+            </div>
+
+            <form id="form-custom-item" class="space-y-3 text-xs font-semibold">
+                <div>
+                    <label class="block text-slate-600 mb-1">Nama Jasa / Barang</label>
+                    <input id="custom-item-name" type="text" placeholder="misal: Las Knalpot, Baut Velg..." required
+                        class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-slate-600 mb-1">Harga Satuan (Rp)</label>
+                        <input id="custom-item-price" type="number" min="0" placeholder="0" required
+                            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 font-bold">
+                    </div>
+                    <div>
+                        <label class="block text-slate-600 mb-1">Jumlah (Qty)</label>
+                        <input id="custom-item-qty" type="number" min="1" value="1" required
+                            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 font-bold">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-slate-600 mb-1">Satuan</label>
+                    <input id="custom-item-unit" type="text" value="titik" placeholder="titik, pcs, roda..."
+                        class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div class="pt-2 flex gap-2">
+                    <button type="submit"
+                        class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow transition-all">
+                        Masukkan ke Struk
+                    </button>
+                    <button data-close-modal type="button"
+                        class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-all">
+                        Batal
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- MODAL: ADD / EDIT SERVICE IN MASTER DATA                       -->
+    <!-- ============================================================== -->
+    <div id="modal-service-master" class="modal-backdrop fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden no-print">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h3 id="modal-service-title" class="font-extrabold text-base text-slate-900">Kelola Layanan</h3>
+                <button data-close-modal class="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
+            </div>
+
+            <form id="form-service-master" class="space-y-3 text-xs font-semibold">
+                <input id="service-form-id" type="hidden">
+
+                <div>
+                    <label class="block text-slate-600 mb-1">Nama Layanan / Barang</label>
+                    <input id="service-form-name" type="text" placeholder="misal: Tambal Tubeless Dingin" required
+                        class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 font-bold">
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-slate-600 mb-1">Kategori</label>
+                        <select id="service-form-category" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none">
+                            <option value="tambal">Tambal Ban</option>
+                            <option value="bongkar">Bongkar Pasang Ban</option>
+                            <option value="cuci">Cuci Kendaraan</option>
+                            <option value="sparepart">Sparepart & Tambahan</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-slate-600 mb-1">Satuan</label>
+                        <input id="service-form-unit" type="text" placeholder="per lubang, per roda, pcs..."
+                            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-slate-600 mb-1">Berlaku Untuk</label>
+                    <select id="service-form-applicable" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none">
+                        <option value="both">Keduanya (Motor & Mobil)</option>
+                        <option value="motor">Hanya Motor</option>
+                        <option value="mobil">Hanya Mobil</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-slate-600 mb-1">Tarif Motor (Rp)</label>
+                        <input id="service-form-price-motor" type="number" min="0" placeholder="0"
+                            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none font-bold text-blue-600">
+                    </div>
+                    <div>
+                        <label class="block text-slate-600 mb-1">Tarif Mobil (Rp)</label>
+                        <input id="service-form-price-mobil" type="number" min="0" placeholder="0"
+                            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none font-bold text-blue-600">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-slate-600 mb-1">Deskripsi Singkat (Opsional)</label>
+                    <input id="service-form-desc" type="text" placeholder="Keterangan singkat pengerjaan..."
+                        class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none text-slate-600">
+                </div>
+
+                <div class="pt-3 flex gap-2">
+                    <button type="submit"
+                        class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow transition-all">
+                        Simpan Tarif
+                    </button>
+                    <button data-close-modal type="button"
+                        class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-all">
+                        Batal
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- HIDDEN THERMAL PRINT AREA ONLY VISIBLE DURING PRINT -->
+    <div id="print-receipt-section" class="thermal-receipt"></div>
+
+    <!-- APP SCRIPTS -->
+    <script src="js/default-data.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
