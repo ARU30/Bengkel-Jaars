@@ -4,10 +4,10 @@
  */
 
 const DEFAULT_PROFILE = {
-    name: "Bengkel Ban & Cuci Barokah",
+    name: "Bengkel Ban & Cuci Kendaraaan (Jaars Garage)",
     tagline: "Layanan Tambal Ban, Bongkar Pasang & Cuci Mobil/Motor",
-    address: "Jl. Raya Utama No. 88, Indonesia",
-    phone: "081234567890",
+    address: "Jl. Tawang Sakti No.46, Tawangrejo, Kec. Kartoharjo, Kota Madiun, Jawa Timur 63113",
+    phone: "085156696378",
     receiptFooter: "Terima kasih atas kunjungan Anda. Utamakan keselamatan berkendara!"
 };
 

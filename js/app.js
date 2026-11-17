@@ -1128,7 +1128,7 @@ function generateReceiptHTML(tx) {
                     "${state.profile.receiptFooter || 'Terima kasih atas kunjungan Anda!'}"
                 </p>
                 <p style="margin: 4px 0 0 0; font-size: 9px; color: #9ca3af;">
-                    Dicetak via Kalkulator Bengkel Vercel
+                    Dicetak via Aplikasi Kasir Bengkel
                 </p>
             </div>
         </div>
