@@ -26,6 +26,8 @@
         }
     </script>
     <link rel="stylesheet" href="css/style.css">
+    <!-- SheetJS (xlsx) for Excel Export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- Google Fonts Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -57,29 +59,58 @@
                     </div>
                 </div>
 
-                <!-- Navigation Tabs -->
-                <nav class="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/80">
-                    <button data-tab-target="pos" 
-                        class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all bg-blue-600 text-white shadow-sm">
-                        <span>🧮</span>
-                        <span class="hidden md:inline">Kasir &</span> Kalkulator
-                    </button>
-                    <button data-tab-target="prices" 
-                        class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-slate-600 hover:bg-slate-200/60 transition-all">
-                        <span>⚙️</span>
-                        <span>Kelola Tarif</span>
-                    </button>
-                    <button data-tab-target="history" 
-                        class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-slate-600 hover:bg-slate-200/60 transition-all">
-                        <span>📊</span>
-                        <span class="hidden md:inline">Laporan &</span> Riwayat
-                    </button>
-                    <button data-tab-target="settings" 
-                        class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-slate-600 hover:bg-slate-200/60 transition-all">
-                        <span>🏢</span>
-                        <span class="hidden md:inline">Profil</span>
-                    </button>
-                </nav>
+                <!-- Navigation & Admin Mode Controls -->
+                <div class="flex items-center gap-2">
+                    <nav class="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/80">
+                        <button data-tab-target="pos" 
+                            class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all bg-blue-600 text-white shadow-sm">
+                            <span>🧮</span>
+                            <span class="hidden md:inline">Kasir &</span> Kalkulator
+                        </button>
+
+                        <!-- Menu Khusus Admin (Hanya tampil jika login Admin) -->
+                        <div id="admin-nav-group" class="hidden items-center">
+                            <button data-tab-target="prices" 
+                                class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-slate-600 hover:bg-slate-200/60 transition-all">
+                                <span>⚙️</span>
+                                <span>Kelola Tarif</span>
+                            </button>
+                            <button data-tab-target="history" 
+                                class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-slate-600 hover:bg-slate-200/60 transition-all">
+                                <span>📊</span>
+                                <span class="hidden md:inline">Laporan &</span> Riwayat
+                            </button>
+                            <button data-tab-target="settings" 
+                                class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-slate-600 hover:bg-slate-200/60 transition-all">
+                                <span>🏢</span>
+                                <span>Profil</span>
+                            </button>
+                        </div>
+                    </nav>
+
+                    <!-- Tombol Masuk / Keluar Mode Admin -->
+                    <div id="admin-auth-controls" class="flex items-center">
+                        <button id="btn-admin-login" type="button"
+                            class="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200/80 text-slate-700 text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs"
+                            title="Masuk sebagai Admin untuk ubah tarif, laporan, dan profil">
+                            <span>🔒</span>
+                            <span class="hidden sm:inline">Mode Admin</span>
+                        </button>
+
+                        <div id="admin-logged-in-bar" class="hidden items-center gap-2">
+                            <span class="hidden md:inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2.5 py-1.5 rounded-xl">
+                                <span>👑</span>
+                                <span>Admin Aktif</span>
+                            </span>
+                            <button id="btn-admin-logout" type="button"
+                                class="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs"
+                                title="Kunci kembali ke mode Kasir / Pengguna biasa">
+                                <span>🚪</span>
+                                <span class="hidden sm:inline">Kunci / Keluar</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </header>
@@ -285,7 +316,7 @@
                         <!-- Perhitungan Tunai & Kembalian (Cash Calculator) -->
                         <div id="cash-calculation-section" class="flex flex-col gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
                             <div class="flex items-center justify-between text-xs">
-                                <span class="font-bold text-slate-700">Uang Diterima:</span>
+                                <span class="font-bold text-slate-700">Uang Tunai Diterima:</span>
                                 <div class="relative w-36">
                                     <span class="absolute inset-y-0 left-0 pl-2 flex items-center text-xs text-slate-400 font-bold">Rp</span>
                                     <input id="cash-input" type="number" min="0" placeholder="0"
@@ -293,19 +324,149 @@
                                 </div>
                             </div>
 
-                            <!-- Tombol Cepat Pecahan Uang -->
+                            <!-- Label Pecahan & Tombol Reset -->
+                            <div class="flex items-center justify-between text-[10px] text-slate-500 font-bold px-0.5">
+                                <span>Pilihan Nominal Pecahan:</span>
+                                <button type="button" id="btn-cash-clear" class="px-1.5 py-0.5 text-[10px] bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 rounded transition-all">
+                                    Reset (0)
+                                </button>
+                            </div>
+
+                            <!-- Tombol Cepat Pecahan Uang (1rb, 2rb, 5rb, 10rb, 20rb, 50rb, 100rb, Pas) -->
                             <div class="grid grid-cols-4 gap-1 text-[11px] font-bold">
-                                <button type="button" class="btn-quick-cash py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700" data-amount="exact">Pas</button>
-                                <button type="button" class="btn-quick-cash py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700" data-amount="20000">20rb</button>
-                                <button type="button" class="btn-quick-cash py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700" data-amount="50000">50rb</button>
-                                <button type="button" class="btn-quick-cash py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-lg text-slate-700" data-amount="100000">100rb</button>
+                                <button type="button" class="btn-quick-cash py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-xs" data-amount="exact">Uang Pas</button>
+                                <button type="button" class="btn-quick-cash py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-lg transition-all" data-amount="100000">100rb</button>
+                                <button type="button" class="btn-quick-cash py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-lg transition-all" data-amount="50000">50rb</button>
+                                <button type="button" class="btn-quick-cash py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg transition-all" data-amount="20000">20rb</button>
+                            </div>
+                            <div class="grid grid-cols-4 gap-1 text-[11px] font-bold">
+                                <button type="button" class="btn-quick-cash py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-lg transition-all" data-amount="10000">10rb</button>
+                                <button type="button" class="btn-quick-cash py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg transition-all" data-amount="5000">5rb</button>
+                                <button type="button" class="btn-quick-cash py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg transition-all" data-amount="2000">2rb</button>
+                                <button type="button" class="btn-quick-cash py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-lg transition-all" data-amount="1000">1rb</button>
+                            </div>
+
+                            <!-- Tombol Penambah Pecahan (+1rb, +2rb, +5rb, +10rb, +20rb, +50rb, +100rb) -->
+                            <div class="pt-1.5 border-t border-slate-200/60">
+                                <span class="text-[10px] text-slate-400 font-semibold block mb-1">Tambah nominal (+):</span>
+                                <div class="grid grid-cols-7 gap-0.5 text-[10px] font-bold text-center">
+                                    <button type="button" class="btn-add-cash py-1 bg-white hover:bg-teal-50 border border-slate-200 hover:border-teal-300 text-teal-700 rounded transition-all" data-add="1000">+1k</button>
+                                    <button type="button" class="btn-add-cash py-1 bg-white hover:bg-slate-100 border border-slate-200 hover:border-slate-300 text-slate-700 rounded transition-all" data-add="2000">+2k</button>
+                                    <button type="button" class="btn-add-cash py-1 bg-white hover:bg-amber-50 border border-slate-200 hover:border-amber-300 text-amber-700 rounded transition-all" data-add="5000">+5k</button>
+                                    <button type="button" class="btn-add-cash py-1 bg-white hover:bg-purple-50 border border-slate-200 hover:border-purple-300 text-purple-700 rounded transition-all" data-add="10000">+10k</button>
+                                    <button type="button" class="btn-add-cash py-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 text-emerald-700 rounded transition-all" data-add="20000">+20k</button>
+                                    <button type="button" class="btn-add-cash py-1 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-blue-700 rounded transition-all" data-add="50000">+50k</button>
+                                    <button type="button" class="btn-add-cash py-1 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-300 text-rose-700 rounded transition-all" data-add="100000">+100k</button>
+                                </div>
                             </div>
 
                             <!-- Display Kembalian -->
                             <div id="change-display-box" class="flex items-center justify-between pt-2 border-t border-slate-200/60">
-                                <span class="text-xs font-bold text-slate-600">Kembalian:</span>
+                                <span id="change-label" class="text-xs font-bold text-slate-600">Kembalian:</span>
                                 <span id="summary-change" class="text-base font-extrabold text-emerald-600">Rp 0</span>
                             </div>
+                        </div>
+
+                        <!-- Tampilan Pembayaran QRIS (muncul saat radio QRIS dipilih) -->
+                        <div id="qris-display-section" class="hidden flex flex-col gap-2.5 p-3 bg-gradient-to-b from-blue-50/50 to-white rounded-2xl border border-blue-200 shadow-xs">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-base">📱</span>
+                                    <span class="font-extrabold text-xs text-blue-900 uppercase tracking-wide">Scan QRIS Kasir</span>
+                                </div>
+                                <span class="px-2 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-700 rounded-full">Semua Bank & E-Wallet</span>
+                            </div>
+
+                            <!-- Box Gambar QRIS -->
+                            <div class="relative bg-white p-2.5 rounded-xl border border-blue-200/80 shadow-xs text-center">
+                                <img id="qris-img-display" src="img/qris.jpeg" onerror="if(!this.dataset.triedJpg){this.dataset.triedJpg=1; this.src='img/qris.jpg';}else{this.style.display='none'; const fb = document.getElementById('qris-fallback-box'); if(fb) fb.classList.remove('hidden');}" alt="QRIS Bengkel"
+                                    class="w-48 h-48 sm:w-52 sm:h-52 object-contain mx-auto rounded-lg cursor-pointer hover:opacity-90 transition-all">
+                                
+                                <!-- Fallback jika file qris.jpeg belum ada di folder img -->
+                                <div id="qris-fallback-box" class="hidden py-6 px-3 text-center bg-slate-50 rounded-lg border border-dashed border-slate-300">
+                                    <span class="text-3xl block mb-2">📸</span>
+                                    <p class="text-xs font-bold text-slate-700">Gambar QRIS Belum Terpasang</p>
+                                    <p class="text-[11px] text-slate-500 mt-1">Letakkan file foto dengan nama <code class="bg-slate-200 px-1 py-0.5 rounded text-blue-700 font-bold">qris.jpeg</code> di dalam folder <code class="bg-slate-200 px-1 py-0.5 rounded font-bold">img/</code></p>
+                                    <label class="mt-3 inline-block px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-all">
+                                        Pilih Foto QRIS Sekarang
+                                        <input type="file" id="qris-quick-upload" accept="image/jpeg,image/png,image/jpg" class="sr-only">
+                                    </label>
+                                </div>
+
+                                <div class="mt-2 flex items-center justify-center gap-2">
+                                    <button type="button" id="btn-zoom-qris" class="px-3 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-all flex items-center gap-1 shadow-xs active:scale-95">
+                                        🔍 <span>Perbesar QRIS Layar Penuh</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Nominal Bayar QRIS -->
+                            <div class="p-2.5 bg-blue-50/70 rounded-xl border border-blue-200 text-center">
+                                <span class="text-[10px] text-slate-500 block font-bold uppercase">Total Tagihan Yang Harus Di-scan</span>
+                                <span id="qris-amount-display" class="text-xl font-black text-blue-600">Rp 0</span>
+                            </div>
+
+                            <p class="text-[10px] text-slate-500 text-center leading-relaxed">
+                                Pelanggan dapat scan menggunakan aplikasi m-Banking (BCA, BRImo, Livin, dll) atau E-Wallet (GoPay, OVO, Dana, ShopeePay).
+                            </p>
+                        </div>
+
+                        <!-- Tampilan Pembayaran Transfer Bank BRI (muncul saat radio Transfer dipilih) -->
+                        <div id="transfer-display-section" class="hidden flex flex-col gap-2.5 p-3 bg-gradient-to-b from-blue-50/60 to-white rounded-2xl border border-blue-300 shadow-xs">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-base">🏦</span>
+                                    <div>
+                                        <span class="font-extrabold text-xs text-blue-900 uppercase tracking-wide block leading-tight">Transfer Bank BRI</span>
+                                        <span class="text-[10px] text-slate-500">PT Bank Rakyat Indonesia (Persero) Tbk</span>
+                                    </div>
+                                </div>
+                                <span class="px-2 py-0.5 text-[10px] font-black bg-blue-600 text-white rounded-full">BRI</span>
+                            </div>
+
+                            <!-- Kartu Nomor Rekening BRI -->
+                            <div class="p-3 bg-white rounded-xl border border-blue-200/90 shadow-xs flex flex-col gap-2">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <span class="text-[10px] text-slate-400 font-bold uppercase block">Nomor Rekening BRI</span>
+                                        <span id="transfer-bank-account" class="font-mono text-base font-black text-blue-900 tracking-wider">0062-01-001234-53-0</span>
+                                    </div>
+                                    <button type="button" id="btn-copy-account" class="px-2.5 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded-lg transition-all flex items-center gap-1 shadow-xs active:scale-95">
+                                        📋 <span>Salin</span>
+                                    </button>
+                                </div>
+
+                                <div class="flex items-center justify-between pt-1.5 border-t border-slate-100 text-xs">
+                                    <span class="text-slate-500">Atas Nama Rekening:</span>
+                                    <span id="transfer-bank-holder" class="font-extrabold text-slate-800">Jaars Garage</span>
+                                </div>
+                            </div>
+
+                            <!-- Nominal Transfer -->
+                            <div class="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between">
+                                <div>
+                                    <span class="text-[10px] text-emerald-700 block font-bold uppercase">Nominal Tepat Ditransfer</span>
+                                    <span id="transfer-amount-display" class="font-black text-base text-emerald-800">Rp 0</span>
+                                </div>
+                                <button type="button" id="btn-copy-amount" class="px-2.5 py-1.5 text-xs font-bold text-emerald-800 bg-white hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-all flex items-center gap-1 shadow-xs active:scale-95">
+                                    📋 <span>Salin</span>
+                                </button>
+                            </div>
+
+                            <p class="text-[10px] text-slate-500 text-center leading-relaxed">
+                                Minta pelanggan mentransfer sesuai nominal tepat di atas dan periksa bukti transfer sukses sebelum menyelesaikan transaksi.
+                            </p>
+                        </div>
+
+                        <!-- Tampilan Bon / Piutang -->
+                        <div id="bon-display-section" class="hidden p-3 bg-amber-50 rounded-2xl border border-amber-300 text-amber-900 flex flex-col gap-1 text-xs">
+                            <div class="flex items-center gap-1.5 font-extrabold text-amber-800">
+                                <span>⚠️</span>
+                                <span>Pembayaran Ditangguhkan (Bon / Hutang)</span>
+                            </div>
+                            <p class="text-[11px] text-amber-700 leading-relaxed">
+                                Transaksi ini akan dicatat sebagai piutang pelanggan belum lunas. Pastikan nomor WhatsApp dan nama pelanggan diisi dengan benar.
+                            </p>
                         </div>
 
                         <!-- Action Buttons -->
@@ -406,40 +567,167 @@
         </section>
 
         <!-- ============================================================== -->
-        <!-- PANEL 3: LAPORAN & RIWAYAT TRANSAKSI                           -->
+        <!-- PANEL 3: LAPORAN & RIWAYAT TRANSAKSI (ADMIN ONLY)              -->
         <!-- ============================================================== -->
         <section id="panel-history" class="tab-content-panel hidden">
             <div class="flex flex-col gap-6">
 
-                <!-- KPI Cards -->
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <!-- Header Laporan & Export Excel -->
+                <div class="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h2 class="text-xl font-extrabold text-slate-900">📊 Laporan Keuangan & Penghasilan</h2>
+                            <span class="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full uppercase">Khusus Admin</span>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1">
+                            Perhitungan omset bengkel harian, bulanan (1 bulan) hingga tahunan lengkap dengan ekspor spreadsheet Excel.
+                        </p>
+                    </div>
+
+                    <!-- Tombol Export & Import Excel -->
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button id="btn-download-excel-template" type="button"
+                            class="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 shadow-xs"
+                            title="Unduh format template Excel (.xlsx) untuk diisi manual">
+                            <span>📄</span>
+                            <span>Format Template</span>
+                        </button>
+
+                        <label class="px-3.5 py-2.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold text-xs rounded-xl cursor-pointer flex items-center gap-1.5 transition-all shadow-xs"
+                            title="Impor file Excel (.xlsx / .csv) yang diisi manual untuk dimasukkan ke data bengkel">
+                            <span>📥</span>
+                            <span>Import dari Excel (.xlsx)</span>
+                            <input id="input-import-excel" type="file" accept=".xlsx,.xls,.csv" class="hidden">
+                        </label>
+
+                        <button id="btn-export-excel" type="button"
+                            class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center gap-1.5 transition-all">
+                            <span>📗</span>
+                            <span>Export ke Excel (.xlsx)</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filter Periode Bar -->
+                <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+                    <div class="flex flex-wrap items-center gap-1.5 font-bold">
+                        <span class="text-slate-400 font-normal mr-1">Filter Waktu:</span>
+                        <button data-history-filter="today" class="btn-filter-period px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 transition-all">Hari Ini</button>
+                        <button data-history-filter="week" class="btn-filter-period px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 transition-all">7 Hari</button>
+                        <button data-history-filter="month" class="btn-filter-period px-3 py-1.5 rounded-xl border transition-all active bg-blue-600 text-white border-blue-600 shadow-xs">Bulan Ini</button>
+                        <button data-history-filter="year" class="btn-filter-period px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 transition-all">Tahun Ini</button>
+                        <button data-history-filter="all" class="btn-filter-period px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 transition-all">Semua</button>
+                    </div>
+
+                    <!-- Dropdown Pemilihan Bulan & Tahun Spesifik -->
+                    <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 p-1 rounded-xl">
+                            <span class="text-[11px] font-semibold text-slate-500 pl-2">Pilih:</span>
+                            <select id="select-filter-month" class="bg-transparent text-xs font-bold text-slate-700 py-1 px-2 focus:outline-none cursor-pointer">
+                                <option value="all">Semua Bulan</option>
+                                <option value="0">Januari</option>
+                                <option value="1">Februari</option>
+                                <option value="2">Maret</option>
+                                <option value="3">April</option>
+                                <option value="4">Mei</option>
+                                <option value="5">Juni</option>
+                                <option value="6">Juli</option>
+                                <option value="7">Agustus</option>
+                                <option value="8">September</option>
+                                <option value="9">Oktober</option>
+                                <option value="10">November</option>
+                                <option value="11">Desember</option>
+                            </select>
+                            <select id="select-filter-year" class="bg-transparent text-xs font-bold text-slate-700 py-1 px-2 focus:outline-none border-l border-slate-200 cursor-pointer">
+                                <!-- Populated dynamically by JS -->
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- KPI Financial Summary Cards -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
                         <div>
-                            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Omset</div>
+                            <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Penghasilan (Omset)</div>
                             <div id="stat-total-omset" class="text-2xl font-black text-slate-900 mt-1">Rp 0</div>
                         </div>
-                        <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl">
+                        <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
                             💰
                         </div>
                     </div>
 
                     <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
                         <div>
-                            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Jumlah Transaksi</div>
+                            <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Diskon Diberikan</div>
+                            <div id="stat-total-discount" class="text-2xl font-black text-rose-600 mt-1">Rp 0</div>
+                        </div>
+                        <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl shrink-0">
+                            🏷️
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                        <div>
+                            <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Jumlah Transaksi</div>
                             <div id="stat-total-tx" class="text-2xl font-black text-slate-900 mt-1">0 Transaksi</div>
                         </div>
-                        <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl">
+                        <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl shrink-0">
                             🧾
                         </div>
                     </div>
 
                     <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
                         <div>
-                            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Rata-rata Transaksi</div>
+                            <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Rata-rata Transaksi</div>
                             <div id="stat-avg-tx" class="text-2xl font-black text-slate-900 mt-1">Rp 0</div>
                         </div>
-                        <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl">
+                        <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shrink-0">
                             📈
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Financial Breakdown Section (Metode Pembayaran & Rekap Tahunan 12 Bulan) -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Metode Pembayaran Breakdown Card -->
+                    <div class="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 flex flex-col gap-3">
+                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                            <h3 class="font-extrabold text-sm text-slate-900 flex items-center gap-1.5">
+                                <span>💳</span>
+                                <span>Metode Pembayaran</span>
+                            </h3>
+                            <span class="text-[10px] text-slate-400 font-medium">Periode Aktif</span>
+                        </div>
+                        <div id="payment-breakdown-list" class="flex flex-col gap-2 pt-1 text-xs">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Rekap Tahunan: Tabel 12 Bulan -->
+                    <div class="lg:col-span-2 bg-white rounded-3xl border border-slate-200 shadow-sm p-6 flex flex-col gap-3">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-100 gap-1">
+                            <h3 class="font-extrabold text-sm text-slate-900 flex items-center gap-1.5">
+                                <span>📅</span>
+                                <span>Rekap Penghasilan 1 Tahun Penuh (<span id="rekap-year-label" class="text-blue-600">2026</span>)</span>
+                            </h3>
+                            <span class="text-[11px] text-slate-400 font-medium">Perbandingan Omset Bulanan</span>
+                        </div>
+                        <div class="overflow-x-auto max-h-60 overflow-y-auto">
+                            <table class="w-full text-xs text-left">
+                                <thead class="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] sticky top-0">
+                                    <tr>
+                                        <th class="px-3 py-2">Bulan</th>
+                                        <th class="px-3 py-2 text-center">Transaksi</th>
+                                        <th class="px-3 py-2 text-right">Motor</th>
+                                        <th class="px-3 py-2 text-right">Mobil</th>
+                                        <th class="px-3 py-2 text-right">Total Omset</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rekap-monthly-tbody" class="divide-y divide-slate-100 font-medium">
+                                    <!-- Populated dynamically by JS -->
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -448,17 +736,12 @@
                 <div class="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                         <div>
-                            <h2 class="text-lg font-extrabold text-slate-900">Riwayat Transaksi</h2>
-                            <p class="text-xs text-slate-400">Daftar transaksi bengkel yang telah selesai</p>
+                            <h3 class="text-base font-extrabold text-slate-900">Rincian Transaksi Periode Terpilih</h3>
+                            <p id="history-period-description" class="text-xs text-slate-400">Menampilkan seluruh transaksi pada periode yang aktif</p>
                         </div>
-
-                        <!-- Filter Time -->
-                        <div class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold">
-                            <button data-history-filter="today" class="px-3 py-1.5 rounded-lg active bg-blue-600 text-white transition-all">Hari Ini</button>
-                            <button data-history-filter="week" class="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-all">7 Hari</button>
-                            <button data-history-filter="month" class="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-all">Bulan Ini</button>
-                            <button data-history-filter="all" class="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-all">Semua</button>
-                        </div>
+                        <span id="history-item-count-badge" class="px-3 py-1 text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 rounded-full w-fit">
+                            0 transaksi
+                        </span>
                     </div>
 
                     <!-- List Container -->
@@ -512,6 +795,42 @@
                             class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 text-slate-700"></textarea>
                     </div>
 
+                    <!-- Rekening Bank & QRIS Kasir -->
+                    <div class="pt-4 border-t border-slate-200/80">
+                        <div class="flex items-center gap-1.5 mb-2">
+                            <span class="text-base">💳</span>
+                            <h4 class="text-xs font-extrabold text-blue-900 uppercase tracking-wider">Rekening Bank & QRIS Kasir</h4>
+                        </div>
+                        <p class="text-[11px] text-slate-400 mb-3">Informasi rekening ini akan tampil otomatis di sistem kasir/pengguna saat memilih metode Transfer atau QRIS.</p>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-slate-700 mb-1">Nama Bank</label>
+                                <input id="settings-bank-name" type="text" placeholder="misal: Bank BRI"
+                                    class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 font-bold text-slate-800">
+                            </div>
+                            <div>
+                                <label class="block text-slate-700 mb-1">Nomor Rekening BRI</label>
+                                <input id="settings-bank-account" type="text" placeholder="misal: 0062-01-001234-53-0"
+                                    class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 font-mono font-bold text-slate-800">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                            <div>
+                                <label class="block text-slate-700 mb-1">Atas Nama Rekening</label>
+                                <input id="settings-bank-holder" type="text" placeholder="misal: Jaars Garage"
+                                    class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 text-slate-800 font-semibold">
+                            </div>
+                            <div>
+                                <label class="block text-slate-700 mb-1">Upload Foto QRIS Baru (JPEG/PNG)</label>
+                                <input id="settings-qris-file" type="file" accept="image/jpeg,image/png,image/jpg"
+                                    class="w-full text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                                <span class="text-[10px] text-slate-400 block mt-1">Atau letakkan file bernama <code class="font-bold text-blue-600">qris.jpeg</code> di folder <code class="font-bold">img/</code></span>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="pt-4">
                         <button type="submit"
                             class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-sm rounded-xl shadow-md transition-all">
@@ -519,6 +838,25 @@
                         </button>
                     </div>
                 </form>
+
+                <!-- Ubah PIN Akses Admin -->
+                <div class="mt-8 pt-6 border-t border-slate-200">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-base">🔐</span>
+                        <h3 class="font-extrabold text-slate-900 text-sm">Ganti PIN Akses Admin</h3>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-3">
+                        PIN ini digunakan untuk membuka menu <strong>Kelola Tarif</strong>, <strong>Laporan & Riwayat</strong>, serta <strong>Profil</strong>.
+                    </p>
+                    <div class="flex flex-col sm:flex-row items-center gap-2">
+                        <input id="settings-admin-pin" type="password" placeholder="Ketik PIN Baru (misal: 1234)" maxlength="20"
+                            class="w-full sm:flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 font-mono text-slate-900 text-xs font-bold">
+                        <button type="button" id="btn-save-admin-pin"
+                            class="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shrink-0 transition-all shadow-xs">
+                            Simpan PIN Baru
+                        </button>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -531,6 +869,81 @@
             <span>Sistem Kasir & Estimasi Biaya Mandiri</span>
         </div>
     </footer>
+
+    <!-- ============================================================== -->
+    <!-- MODAL: LOGIN ADMIN                                             -->
+    <!-- ============================================================== -->
+    <div id="modal-admin-login" class="modal-backdrop fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden no-print">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl flex flex-col gap-4">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-lg">
+                        🔒
+                    </div>
+                    <div>
+                        <h3 class="font-extrabold text-base text-slate-900">Akses Khusus Admin</h3>
+                        <p class="text-[11px] text-slate-400">Masukkan PIN untuk membuka menu</p>
+                    </div>
+                </div>
+                <button data-close-modal class="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
+            </div>
+
+            <form id="form-admin-login" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1.5">PIN / Sandi Admin</label>
+                    <input id="admin-pin-input" type="password" maxlength="20" placeholder="Default: 1234" autofocus
+                        class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-blue-500 font-mono text-center text-xl font-bold tracking-widest text-slate-900">
+                    <p id="admin-login-error" class="text-xs text-rose-600 font-semibold mt-1.5 hidden text-center">❌ PIN salah! Silakan coba lagi.</p>
+                </div>
+
+                <div class="pt-1 flex flex-col gap-2">
+                    <button type="submit"
+                        class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition-all">
+                        Buka Akses Admin
+                    </button>
+                    <button data-close-modal type="button"
+                        class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-all">
+                        Batal
+                    </button>
+                </div>
+
+                <div class="text-[11px] text-slate-400 text-center bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    PIN bawaan awal adalah <strong class="text-slate-700 font-mono">1234</strong>.<br>
+                    Menu tarif, omset & profil hanya dapat dibuka oleh admin.
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- MODAL: QRIS FULLSCREEN ZOOM                                   -->
+    <!-- ============================================================== -->
+    <div id="modal-qris-zoom" class="modal-backdrop fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 hidden no-print">
+        <div class="bg-white rounded-3xl max-w-sm sm:max-w-md w-full p-6 shadow-2xl flex flex-col gap-4 text-center">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div class="text-left">
+                    <h3 class="text-base font-extrabold text-slate-900">Scan QRIS Kasir</h3>
+                    <p class="text-xs text-slate-400">Scan langsung dari kamera HP atau e-wallet pelanggan</p>
+                </div>
+                <button type="button" id="btn-close-qris-zoom" class="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 font-bold text-lg">
+                    ✕
+                </button>
+            </div>
+
+            <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+                <img id="qris-zoom-img" src="img/qris.jpeg" onerror="if(!this.dataset.triedJpg){this.dataset.triedJpg=1; this.src='img/qris.jpg';}" alt="QRIS Pembayaran Bengkel" class="w-64 h-64 sm:w-72 sm:h-72 object-contain mx-auto rounded-xl">
+            </div>
+
+            <div class="p-3 bg-blue-50 rounded-2xl border border-blue-200">
+                <span class="text-xs text-blue-600 font-bold block uppercase tracking-wide">Nominal Tagihan Yang Harus Di-scan</span>
+                <span id="qris-zoom-amount" class="text-2xl font-black text-blue-700">Rp 0</span>
+            </div>
+
+            <button type="button" id="btn-close-qris-zoom-bottom" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all">
+                Tutup Tampilan QRIS
+            </button>
+        </div>
+    </div>
 
     <!-- ============================================================== -->
     <!-- MODAL: RECEIPT PRINT & WHATSAPP SHARING                        -->

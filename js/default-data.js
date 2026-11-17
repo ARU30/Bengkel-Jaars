@@ -8,7 +8,11 @@ const DEFAULT_PROFILE = {
     tagline: "Layanan Tambal Ban, Bongkar Pasang & Cuci Mobil/Motor",
     address: "Jl. Tawang Sakti No.46, Tawangrejo, Kec. Kartoharjo, Kota Madiun, Jawa Timur 63113",
     phone: "085156696378",
-    receiptFooter: "Terima kasih atas kunjungan Anda. Utamakan keselamatan berkendara!"
+    receiptFooter: "Terima kasih atas kunjungan Anda. Utamakan keselamatan berkendara!",
+    bankName: "Bank BRI",
+    bankAccount: "0062-01-001234-53-0",
+    bankHolder: "Jaars Garage",
+    qrisImage: "img/qris.jpeg"
 };
 
 const DEFAULT_CATEGORIES = [
