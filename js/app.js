@@ -17,6 +17,7 @@ let state = {
     activeCategory: 'all',
     searchQuery: '',
     customerName: '',
+    customerPhone: '',
     plateNumber: '',
     orderNote: '',
     discountType: 'nominal', // 'nominal' | 'percent'
@@ -224,9 +225,12 @@ function initUI() {
         });
     });
 
-    // Customer & Plate inputs
+    // Customer, Phone & Plate inputs
     document.getElementById('input-customer-name')?.addEventListener('input', (e) => {
         state.customerName = e.target.value;
+    });
+    document.getElementById('input-customer-phone')?.addEventListener('input', (e) => {
+        state.customerPhone = e.target.value;
     });
     document.getElementById('input-plate-number')?.addEventListener('input', (e) => {
         state.plateNumber = e.target.value.toUpperCase();
@@ -564,16 +568,19 @@ function clearCart() {
         state.discountValue = 0;
         state.cashGiven = 0;
         state.customerName = '';
+        state.customerPhone = '';
         state.plateNumber = '';
         state.orderNote = '';
 
         const nameInput = document.getElementById('input-customer-name');
+        const phoneInput = document.getElementById('input-customer-phone');
         const plateInput = document.getElementById('input-plate-number');
         const noteInput = document.getElementById('input-order-notes');
         const discountInput = document.getElementById('discount-value');
         const cashInput = document.getElementById('cash-input');
 
         if (nameInput) nameInput.value = '';
+        if (phoneInput) phoneInput.value = '';
         if (plateInput) plateInput.value = '';
         if (noteInput) noteInput.value = '';
         if (discountInput) discountInput.value = '0';
@@ -961,6 +968,7 @@ function processCheckout() {
         invoiceNo: `INV-${Date.now().toString().slice(-6)}`,
         date: new Date().toISOString(),
         customerName: state.customerName || 'Pelanggan Umum',
+        customerPhone: state.customerPhone || '',
         plateNumber: state.plateNumber || '-',
         vehicleType: state.selectedVehicle,
         orderNote: state.orderNote || '-',
@@ -987,16 +995,19 @@ function processCheckout() {
     state.discountValue = 0;
     state.cashGiven = 0;
     state.customerName = '';
+    state.customerPhone = '';
     state.plateNumber = '';
     state.orderNote = '';
 
     const nameInput = document.getElementById('input-customer-name');
+    const phoneInput = document.getElementById('input-customer-phone');
     const plateInput = document.getElementById('input-plate-number');
     const noteInput = document.getElementById('input-order-notes');
     const discountInput = document.getElementById('discount-value');
     const cashInput = document.getElementById('cash-input');
 
     if (nameInput) nameInput.value = '';
+    if (phoneInput) phoneInput.value = '';
     if (plateInput) plateInput.value = '';
     if (noteInput) noteInput.value = '';
     if (discountInput) discountInput.value = '0';
@@ -1014,10 +1025,23 @@ function openReceiptModal(tx) {
 
     receiptContent.innerHTML = generateReceiptHTML(tx);
     
+    // Fill WhatsApp phone input in modal
+    const waInput = document.getElementById('modal-wa-phone');
+    if (waInput) {
+        waInput.value = tx.customerPhone || '';
+    }
+
     // Setup WhatsApp button
     const waBtn = document.getElementById('btn-send-whatsapp');
     if (waBtn) {
-        waBtn.onclick = () => sendReceiptWhatsApp(tx);
+        waBtn.onclick = () => {
+            const destPhone = waInput ? waInput.value.trim() : (tx.customerPhone || '');
+            if (destPhone) {
+                tx.customerPhone = destPhone;
+                saveTransactions();
+            }
+            sendReceiptWhatsApp(tx, destPhone);
+        };
     }
 
     // Setup Print button
@@ -1076,6 +1100,12 @@ function generateReceiptHTML(tx) {
                     <span>Pelanggan:</span>
                     <span style="font-weight: 600;">${tx.customerName}</span>
                 </div>
+                ${tx.customerPhone ? `
+                <div style="display: flex; justify-content: space-between;">
+                    <span>WhatsApp:</span>
+                    <span style="font-weight: 500;">${tx.customerPhone}</span>
+                </div>
+                ` : ''}
                 <div style="display: flex; justify-content: space-between;">
                     <span>Kendaraan:</span>
                     <span style="font-weight: 600;">${tx.vehicleType.toUpperCase()} ${tx.plateNumber ? `(${tx.plateNumber})` : ''}</span>
@@ -1135,31 +1165,55 @@ function generateReceiptHTML(tx) {
     `;
 }
 
-function sendReceiptWhatsApp(tx) {
+function formatWhatsAppNumber(phone) {
+    if (!phone) return '';
+    let cleaned = phone.toString().replace(/\D/g, '');
+    if (cleaned.startsWith('0')) {
+        cleaned = '62' + cleaned.substring(1);
+    } else if (cleaned.startsWith('8')) {
+        cleaned = '62' + cleaned;
+    }
+    return cleaned;
+}
+
+function sendReceiptWhatsApp(tx, targetPhone) {
+    let phone = targetPhone !== undefined ? targetPhone : (tx.customerPhone || '');
+    let cleanPhone = formatWhatsAppNumber(phone);
+
     let itemsText = tx.items.map((it, idx) => 
         `${idx + 1}. *${it.name}* (${it.qty} ${it.unit}) = ${formatRupiah(it.price * it.qty)}`
     ).join('\n');
 
+    const paymentLabel = tx.paymentMethod === 'cash' ? 'TUNAI' :
+                         tx.paymentMethod === 'qris' ? 'QRIS' :
+                         tx.paymentMethod === 'transfer' ? 'TRANSFER BANK' : 'BON / HUTANG';
+
     let waMessage = 
-`*NOTA TRANSAKSI - ${state.profile.name.toUpperCase()}*
----------------------------------------
-No. Nota : ${tx.invoiceNo}
-Tanggal  : ${formatDate(tx.date)}
-Pelanggan: ${tx.customerName}
-Kendaraan: ${tx.vehicleType.toUpperCase()} (${tx.plateNumber})
-
-*RINCIAN BIAYA:*
+`*🧾 NOTA BENGKEL - ${state.profile.name.toUpperCase()}*
+${state.profile.tagline ? `_${state.profile.tagline}_\n` : ''}${state.profile.address ? `📍 ${state.profile.address}\n` : ''}${state.profile.phone ? `📞 Kontak Bengkel: ${state.profile.phone}\n` : ''}
+==============================
+*No. Nota* : ${tx.invoiceNo}
+*Tanggal*  : ${formatDate(tx.date)}
+*Pelanggan*: ${tx.customerName || 'Pelanggan Umum'}
+*Kendaraan*: ${tx.vehicleType.toUpperCase()} ${tx.plateNumber ? `(${tx.plateNumber})` : ''}
+${tx.orderNote && tx.orderNote !== '-' ? `*Catatan*  : ${tx.orderNote}\n` : ''}
+*📋 RINCIAN BIAYA:*
 ${itemsText}
----------------------------------------
-Subtotal : ${formatRupiah(tx.subtotal)}
-${tx.discountAmount > 0 ? `Diskon   : -${formatRupiah(tx.discountAmount)}\n` : ''}*TOTAL    : ${formatRupiah(tx.total)}*
-Metode   : ${tx.paymentMethod.toUpperCase()}
-
-_${state.profile.receiptFooter}_
+==============================
+*Subtotal* : ${formatRupiah(tx.subtotal)}
+${tx.discountAmount > 0 ? `*Diskon*   : -${formatRupiah(tx.discountAmount)}\n` : ''}*TOTAL     : ${formatRupiah(tx.total)}*
+*Metode*   : ${paymentLabel}
+${tx.paymentMethod === 'cash' ? `*Bayar*    : ${formatRupiah(tx.cash)}\n*Kembalian*: ${formatRupiah(tx.change)}\n` : ''}
+==============================
+_${state.profile.receiptFooter || 'Terima kasih atas kunjungan Anda. Utamakan keselamatan berkendara!'}_
 `;
 
     const encoded = encodeURIComponent(waMessage);
-    window.open(`https://wa.me/?text=${encoded}`, '_blank');
+    const waUrl = cleanPhone 
+        ? `https://wa.me/${cleanPhone}?text=${encoded}`
+        : `https://wa.me/?text=${encoded}`;
+
+    window.open(waUrl, '_blank');
 }
 
 // --- REPORT & HISTORY ---
@@ -1214,19 +1268,25 @@ function renderHistory() {
                         </span>
                         <span class="text-xs text-slate-400">• ${formatDate(tx.date)}</span>
                     </div>
-                    <div class="text-sm font-semibold text-slate-800 mt-1">
-                        ${tx.customerName} <span class="text-slate-400 font-normal">(${tx.plateNumber})</span>
+                    <div class="text-sm font-semibold text-slate-800 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span>${tx.customerName} <span class="text-slate-400 font-normal">(${tx.plateNumber})</span></span>
+                        ${tx.customerPhone ? `<span class="text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-mono border border-emerald-200">📱 ${tx.customerPhone}</span>` : ''}
                     </div>
                     <div class="text-xs text-slate-500 line-clamp-1 mt-0.5">
                         ${itemsSummary}
                     </div>
                 </div>
 
-                <div class="flex items-center justify-between md:justify-end gap-3 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
-                    <div class="text-right">
-                        <div class="text-xs text-slate-400">Total</div>
+                <div class="flex items-center justify-between md:justify-end gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+                    <div class="text-right mr-1">
+                        <div class="text-[11px] text-slate-400">Total Biaya</div>
                         <div class="text-base font-extrabold text-blue-600">${formatRupiah(tx.total)}</div>
                     </div>
+                    <button onclick="sendDirectWhatsApp('${tx.id}')"
+                        class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1">
+                        <span>💬</span>
+                        <span>Kirim WA</span>
+                    </button>
                     <button onclick="viewHistoryReceipt('${tx.id}')"
                         class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all">
                         Lihat Nota
@@ -1242,6 +1302,24 @@ function renderHistory() {
         `;
     }).join('');
 }
+
+window.sendDirectWhatsApp = function(txId) {
+    const tx = state.transactions.find(t => t.id === txId);
+    if (!tx) return;
+
+    let phone = tx.customerPhone || '';
+    if (!phone) {
+        phone = prompt('Masukkan nomor WhatsApp pelanggan (contoh: 08123456789):', '');
+        if (phone === null) return; // User batalkan
+        phone = phone.trim();
+        if (phone) {
+            tx.customerPhone = phone;
+            saveTransactions();
+            renderHistory();
+        }
+    }
+    sendReceiptWhatsApp(tx, phone);
+};
 
 window.viewHistoryReceipt = function(txId) {
     const tx = state.transactions.find(t => t.id === txId);
