@@ -331,7 +331,7 @@ module.exports = async function handler(req, res) {
                 ...payload,
                 profile: payload.profile ? { ...(existingData.profile || {}), ...payload.profile } : existingData.profile,
                 services: (Array.isArray(payload.services) && payload.services.length > 0) ? payload.services : (existingData.services || []),
-                catalog: mergedCatalog.length > 0 ? mergedCatalog : (existingData.catalog || []),
+                catalog: mergedCatalog,
                 transactions: mergedTransactions,
                 deletedTransactionIds: allDeletedIds,
                 deletedCatalogIds: allDeletedCatIds,

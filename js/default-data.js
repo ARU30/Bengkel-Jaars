@@ -336,6 +336,7 @@ const DEFAULT_SERVICES = [
 const DEFAULT_CATALOG = [
     {
         "id": "cat-bm-01",
+        "updatedAt": 1731900000000,
         "category": "ban-motor",
         "brand": "IRC Tire",
         "name": "SS 570F",
@@ -347,6 +348,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-bm-02",
+        "updatedAt": 1731900000000,
         "category": "ban-motor",
         "brand": "IRC TIRE",
         "name": "SS 560R",
@@ -358,6 +360,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-bm-03",
+        "updatedAt": 1731900000000,
         "category": "ban-motor",
         "brand": "Maxxis",
         "name": "Green Devil MA-G1 Tubeless",
@@ -369,6 +372,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-bm-04",
+        "updatedAt": 1731900000000,
         "category": "ban-motor",
         "brand": "Pirelli",
         "name": "Diablo Rosso Sport Tubeless",
@@ -380,6 +384,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-bm-05",
+        "updatedAt": 1731900000000,
         "category": "ban-motor",
         "brand": "FDR",
         "name": "Flemmo Pro Tubeless",
@@ -391,6 +396,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-bl-01",
+        "updatedAt": 1731900000000,
         "category": "ban-mobil",
         "brand": "Bridgestone",
         "name": "Ecopia EP150",
@@ -402,6 +408,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-bl-02",
+        "updatedAt": 1731900000000,
         "category": "ban-mobil",
         "brand": "Dunlop",
         "name": "Enasave EC300+",
@@ -413,6 +420,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-bl-03",
+        "updatedAt": 1731900000000,
         "category": "ban-mobil",
         "brand": "GT Radial",
         "name": "Champiro Ecotec",
@@ -424,6 +432,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-bl-04",
+        "updatedAt": 1731900000000,
         "category": "ban-mobil",
         "brand": "Michelin",
         "name": "Primacy 4 ST",
@@ -435,6 +444,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-bl-05",
+        "updatedAt": 1731900000000,
         "category": "ban-mobil",
         "brand": "Hankook",
         "name": "Kinergy Eco2 K435",
@@ -446,6 +456,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-ol-01",
+        "updatedAt": 1731900000000,
         "category": "oli-motor",
         "brand": "Motul",
         "name": "Scooter LE 4T 10W-30",
@@ -457,6 +468,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-ol-02",
+        "updatedAt": 1731900000000,
         "category": "oli-motor",
         "brand": "Pertamina",
         "name": "Enduro Matic G 20W-40",
@@ -468,6 +480,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-ol-03",
+        "updatedAt": 1731900000000,
         "category": "oli-motor",
         "brand": "Shell",
         "name": "Advance AX7 10W-40 Synthetic",
@@ -479,6 +492,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-ol-04",
+        "updatedAt": 1731900000000,
         "category": "oli-motor",
         "brand": "Yamalube",
         "name": "Super Matic Oil 10W-40 Full Synth",
@@ -490,6 +504,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-ol-05",
+        "updatedAt": 1731900000000,
         "category": "oli-mobil",
         "brand": "Shell",
         "name": "Helix HX6 10W-40 Synthetic",
@@ -501,6 +516,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-ol-06",
+        "updatedAt": 1731900000000,
         "category": "oli-mobil",
         "brand": "Pertamina",
         "name": "Fastron Gold 5W-30 Full Synthetic",
@@ -512,6 +528,7 @@ const DEFAULT_CATALOG = [
     },
     {
         "id": "cat-ol-07",
+        "updatedAt": 1731900000000,
         "category": "oli-mobil",
         "brand": "Castrol",
         "name": "Magnatec Stop-Start 10W-40",
