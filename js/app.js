@@ -52,6 +52,7 @@ let state = {
     selectedFilterMonth: new Date().getMonth().toString(), // '0'..'11' or 'all'
     selectedFilterYear: new Date().getFullYear(),
     deletedTransactionIds: JSON.parse(localStorage.getItem('bengkel_deleted_tx_ids') || '[]'),
+    deletedCatalogIds: JSON.parse(localStorage.getItem('bengkel_deleted_catalog_ids') || '[]'),
     
     // Program Loyalitas Cuci Kendaraan (Cuci 7x Gratis 1x)
     freeWashVouchers: JSON.parse(localStorage.getItem('bengkel_free_wash_vouchers') || '[]'),
@@ -140,8 +141,13 @@ function loadData() {
         }
         localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
 
+        const savedDeletedCat = localStorage.getItem('bengkel_deleted_catalog_ids');
+        state.deletedCatalogIds = savedDeletedCat ? JSON.parse(savedDeletedCat) : [];
+        const catDelSet = new Set(state.deletedCatalogIds || []);
+
         const savedCatalog = localStorage.getItem('bengkel_catalog');
-        state.catalog = savedCatalog ? JSON.parse(savedCatalog) : [ ...DEFAULT_CATALOG ];
+        const rawCatalog = savedCatalog ? JSON.parse(savedCatalog) : [ ...DEFAULT_CATALOG ];
+        state.catalog = Array.isArray(rawCatalog) ? rawCatalog.filter(p => p && p.id && !catDelSet.has(p.id)) : [ ...DEFAULT_CATALOG ];
 
         const savedAdminEmail = localStorage.getItem('bengkel_admin_email');
         const savedAdminPassword = localStorage.getItem('bengkel_admin_password');
@@ -188,6 +194,7 @@ function loadData() {
         state.transactions = [];
         state.freeWashVouchers = [];
         state.loyaltyClearedVehicles = [];
+        state.deletedCatalogIds = [];
     }
 }
 
@@ -215,6 +222,8 @@ function saveServices() {
 }
 
 function saveCatalog() {
+    const catDelSet = new Set(state.deletedCatalogIds || []);
+    state.catalog = (state.catalog || []).filter(p => p && p.id && !catDelSet.has(p.id));
     localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
     if (syncChannel) {
         try {
@@ -365,6 +374,46 @@ function mergeClearedVehiclesClient(localList, incomingList) {
     return { changed, cleared: Array.from(map.values()) };
 }
 
+// Helper: Gabungkan daftar katalog ban & oli dari Cloud dengan data lokal (Multi-Device Merge)
+function mergeCatalogClient(localList, incomingList, deletedIds = []) {
+    const deletedSet = new Set([
+        ...((state && state.deletedCatalogIds) || []),
+        ...(deletedIds || [])
+    ]);
+
+    const map = new Map();
+    (localList || []).forEach(item => {
+        if (!item || !item.id || deletedSet.has(item.id)) return;
+        map.set(item.id, item);
+    });
+
+    let changed = false;
+    (incomingList || []).forEach(inItem => {
+        if (!inItem || !inItem.id || deletedSet.has(inItem.id)) return;
+        const existing = map.get(inItem.id);
+        if (!existing) {
+            // Produk baru dari cloud
+            map.set(inItem.id, inItem);
+            changed = true;
+        } else {
+            // Jika ada pembaruan pada produk
+            const inTime = Number(inItem.updatedAt || 0);
+            const exTime = Number(existing.updatedAt || 0);
+            if (inTime >= exTime && JSON.stringify(existing) !== JSON.stringify(inItem)) {
+                map.set(inItem.id, { ...existing, ...inItem });
+                changed = true;
+            }
+        }
+    });
+
+    // Jika ada item lokal yang dihapus karena masuk deletedSet
+    if ((localList || []).length !== map.size) {
+        changed = true;
+    }
+
+    return { changed, catalog: Array.from(map.values()) };
+}
+
 // --- CLOUD SYNC & MULTI-DEVICE SYNCHRONIZATION (VERCEL) ---
 let autoSyncDebounceTimer = null;
 function triggerAutoSyncToCloud(label = 'Perubahan data', extraPayload = {}) {
@@ -478,10 +527,31 @@ async function syncFromCloud(silent = false) {
             localStorage.setItem('bengkel_services', JSON.stringify(state.services));
             changed = true;
         }
-        if (Array.isArray(cloudData.catalog) && cloudData.catalog.length > 0) {
-            state.catalog = cloudData.catalog;
-            localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
-            changed = true;
+        // Sinkronisasi Penghapusan Produk Katalog (Tombstone)
+        if (Array.isArray(cloudData.deletedCatalogIds)) {
+            const currentDeletedCat = new Set(state.deletedCatalogIds || []);
+            let catDelChanged = false;
+            cloudData.deletedCatalogIds.forEach(id => {
+                if (id && !currentDeletedCat.has(id)) {
+                    currentDeletedCat.add(id);
+                    catDelChanged = true;
+                }
+            });
+            if (catDelChanged) {
+                state.deletedCatalogIds = Array.from(currentDeletedCat);
+                localStorage.setItem('bengkel_deleted_catalog_ids', JSON.stringify(state.deletedCatalogIds));
+                changed = true;
+            }
+        }
+
+        // Sinkronisasi Katalog Ban & Oli (Multi-Device Merge)
+        if (Array.isArray(cloudData.catalog)) {
+            const mergeCatResult = mergeCatalogClient(state.catalog || [], cloudData.catalog, state.deletedCatalogIds);
+            if (mergeCatResult.changed) {
+                state.catalog = mergeCatResult.catalog;
+                localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
+                changed = true;
+            }
         }
         if (cloudData.adminEmail) {
             state.adminEmail = cloudData.adminEmail;
@@ -563,6 +633,9 @@ async function syncFromCloud(silent = false) {
             if (typeof renderWorkshopHeader === 'function') renderWorkshopHeader();
             if (typeof renderInfoPanel === 'function') renderInfoPanel();
             if (typeof renderProfileForm === 'function') renderProfileForm();
+            if (typeof renderCatalogPanel === 'function') renderCatalogPanel();
+            if (typeof renderCatalogProducts === 'function') renderCatalogProducts();
+            if (typeof renderCatalogFilterBrands === 'function') renderCatalogFilterBrands();
         }
 
         updateCloudSyncIndicator('synced', `Cloud Aktif (${source})`);
@@ -586,12 +659,15 @@ async function syncToCloud(triggerLabel = 'Konfigurasi', extraPayload = {}) {
     updateCloudSyncIndicator('syncing', 'Mengunggah ke Cloud...');
 
     const delSet = new Set(state.deletedTransactionIds || []);
+    const catDelSet = new Set(state.deletedCatalogIds || []);
     const payload = {
         updatedAt: Date.now(),
         updatedBy: state.profile?.name || (state.isAdmin ? 'Admin JAARS' : 'Pengguna / Pelanggan'),
+        isAdmin: Boolean(state.isAdmin),
         profile: state.profile,
         services: state.services,
-        catalog: state.catalog,
+        catalog: (state.catalog || []).filter(p => p && p.id && !catDelSet.has(p.id)),
+        deletedCatalogIds: state.deletedCatalogIds || [],
         // Filter seed/contoh transaksi bawaan dan transaksi yang sudah dihapus agar TIDAK ikut diunggah ke cloud
         transactions: (state.transactions || []).filter(tx => !isSeedTransaction(tx) && !delSet.has(tx.id) && !delSet.has(tx.invoiceNo)),
         deletedTransactionIds: state.deletedTransactionIds || [],
@@ -624,14 +700,21 @@ async function syncToCloud(triggerLabel = 'Konfigurasi', extraPayload = {}) {
                         localStorage.setItem('bengkel_deleted_tx_ids', JSON.stringify(state.deletedTransactionIds));
                     }
                 }
-                if (json.data && Array.isArray(json.data.transactions)) {
-                    const mergeResult = mergeTransactionsClient(state.transactions || [], json.data.transactions, state.deletedTransactionIds);
-                    if (mergeResult.changed) {
-                        state.transactions = mergeResult.transactions;
-                        localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
-                        if (typeof renderDailySummary === 'function') renderDailySummary();
-                        if (typeof renderPaidServicesSummary === 'function') renderPaidServicesSummary();
-                        if (typeof renderHistory === 'function') renderHistory();
+                if (json.data && Array.isArray(json.data.deletedCatalogIds)) {
+                    const mergedDelCat = Array.from(new Set([...(state.deletedCatalogIds || []), ...json.data.deletedCatalogIds]));
+                    if (mergedDelCat.length !== (state.deletedCatalogIds || []).length) {
+                        state.deletedCatalogIds = mergedDelCat;
+                        localStorage.setItem('bengkel_deleted_catalog_ids', JSON.stringify(state.deletedCatalogIds));
+                    }
+                }
+                if (json.data && Array.isArray(json.data.catalog)) {
+                    const mergeCatRes = mergeCatalogClient(state.catalog || [], json.data.catalog, state.deletedCatalogIds);
+                    if (mergeCatRes.changed) {
+                        state.catalog = mergeCatRes.catalog;
+                        localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
+                        if (typeof renderCatalogPanel === 'function') renderCatalogPanel();
+                        if (typeof renderCatalogProducts === 'function') renderCatalogProducts();
+                        if (typeof renderCatalogFilterBrands === 'function') renderCatalogFilterBrands();
                     }
                 }
             }
@@ -716,9 +799,13 @@ function initCloudSync() {
                     if (savedServices) {
                         state.services = JSON.parse(savedServices);
                     }
+                    const savedDeletedCat = localStorage.getItem('bengkel_deleted_catalog_ids');
+                    if (savedDeletedCat) state.deletedCatalogIds = JSON.parse(savedDeletedCat);
                     const savedCatalog = localStorage.getItem('bengkel_catalog');
                     if (savedCatalog) {
-                        state.catalog = JSON.parse(savedCatalog);
+                        const parsedCat = JSON.parse(savedCatalog);
+                        const catDelSet = new Set(state.deletedCatalogIds || []);
+                        state.catalog = Array.isArray(parsedCat) ? parsedCat.filter(p => p && p.id && !catDelSet.has(p.id)) : [];
                     }
                     const savedDeleted = localStorage.getItem('bengkel_deleted_tx_ids');
                     if (savedDeleted) {
@@ -744,6 +831,9 @@ function initCloudSync() {
                     if (typeof renderWorkshopHeader === 'function') renderWorkshopHeader();
                     if (typeof renderInfoPanel === 'function') renderInfoPanel();
                     if (typeof renderProfileForm === 'function') renderProfileForm();
+            if (typeof renderCatalogPanel === 'function') renderCatalogPanel();
+            if (typeof renderCatalogProducts === 'function') renderCatalogProducts();
+            if (typeof renderCatalogFilterBrands === 'function') renderCatalogFilterBrands();
                 } catch (e) {
                     console.error('[BroadcastChannel Sync Error]:', e);
                 }
@@ -2148,7 +2238,7 @@ function renderCatalogProducts() {
                 <!-- Area Tinjau Produk yang Dapat Diklik -->
                 <div onclick="openCatalogDetailModal('${escapeHtml(item.id)}')" class="cursor-pointer" title="Klik untuk meninjau detail & spesifikasi lengkap produk">
                     <!-- Product Image Container -->
-                    <div class="relative w-full aspect-4/3 bg-slate-100 overflow-hidden border-b border-slate-100 flex items-center justify-center">
+                    <div class="relative w-full h-48 sm:h-52 bg-slate-100 overflow-hidden border-b border-slate-100 flex items-center justify-center">
                         <img src="${imgSrc}" alt="${escapeHtml(item.brand)} ${escapeHtml(item.name)}"
                             onerror="window.handleCatalogImgError(this, '${escapeHtml(item.category)}')"
                             class="w-full h-full object-cover group-hover:scale-105 transition-all duration-300">
@@ -2460,7 +2550,8 @@ async function handleSaveCatalogItem(e) {
             state.catalog[idx] = {
                 ...state.catalog[idx],
                 category, brand, name, spec, price, stockStatus, desc,
-                image: image || state.catalog[idx].image
+                image: image || state.catalog[idx].image,
+                updatedAt: Date.now()
             };
         }
     } else {
@@ -2468,7 +2559,8 @@ async function handleSaveCatalogItem(e) {
         const newItem = {
             id: generateId('cat'),
             category, brand, name, spec, price, stockStatus, desc,
-            image: image || ''
+            image: image || '',
+            updatedAt: Date.now()
         };
         state.catalog.unshift(newItem);
     }
@@ -2476,17 +2568,24 @@ async function handleSaveCatalogItem(e) {
     saveCatalog();
     closeModal();
     renderCatalogPanel();
+    syncToCloud('Katalog Ban & Oli');
     showToast(`Produk "${brand} ${name}" berhasil disimpan ke katalog!`);
 }
 
 function deleteCatalogItem(id) {
-    const item = state.catalog.find(p => p.id === id);
+    const item = (state.catalog || []).find(p => p.id === id);
     if (!item) return;
 
     if (confirm(`Yakin ingin menghapus produk "${item.brand} ${item.name}" dari katalog?`)) {
-        state.catalog = state.catalog.filter(p => p.id !== id);
+        state.deletedCatalogIds = state.deletedCatalogIds || [];
+        if (!state.deletedCatalogIds.includes(id)) {
+            state.deletedCatalogIds.push(id);
+            localStorage.setItem('bengkel_deleted_catalog_ids', JSON.stringify(state.deletedCatalogIds));
+        }
+        state.catalog = (state.catalog || []).filter(p => p.id !== id);
         saveCatalog();
         renderCatalogPanel();
+        syncToCloud('Hapus Produk Katalog', { deletedCatalogIds: state.deletedCatalogIds });
         showToast(`Produk "${item.brand} ${item.name}" telah dihapus.`);
     }
 }

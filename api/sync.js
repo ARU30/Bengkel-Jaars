@@ -108,6 +108,36 @@ function mergeClearedVehicles(existingList, incomingList) {
     return Array.from(map.values());
 }
 
+// Helper: Gabungkan daftar katalog ban & oli dari beberapa perangkat tanpa saling menimpa
+function mergeCatalog(existingList, incomingList, deletedIds = []) {
+    const map = new Map();
+    const deletedSet = new Set(deletedIds || []);
+
+    (existingList || []).forEach(item => {
+        if (!item || !item.id || deletedSet.has(item.id)) return;
+        map.set(item.id, item);
+    });
+
+    (incomingList || []).forEach(item => {
+        if (!item || !item.id || deletedSet.has(item.id)) return;
+        const existing = map.get(item.id);
+        if (!existing) {
+            map.set(item.id, item);
+        } else {
+            const inTime = Number(item.updatedAt || 0);
+            const exTime = Number(existing.updatedAt || 0);
+            if (inTime >= exTime) {
+                map.set(item.id, {
+                    ...existing,
+                    ...item
+                });
+            }
+        }
+    });
+
+    return Array.from(map.values());
+}
+
 module.exports = async function handler(req, res) {
     // 1. CORS headers agar dapat diakses dari browser mana pun & domain vercel
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -230,6 +260,12 @@ module.exports = async function handler(req, res) {
                 );
             }
 
+            // Bersihkan data katalog dari produk yang sudah dihapus
+            const deletedCatSet = new Set(Array.isArray(data.deletedCatalogIds) ? data.deletedCatalogIds : []);
+            if (data && Array.isArray(data.catalog)) {
+                data.catalog = data.catalog.filter(p => p && p.id && !deletedCatSet.has(p.id));
+            }
+
             return res.status(200).json({
                 success: true,
                 synced: true,
@@ -257,12 +293,16 @@ module.exports = async function handler(req, res) {
 
             const existingData = (await getData()) || {};
 
-            // Simpan dan gabungkan seluruh ID transaksi yang pernah dihapus agar tidak pernah muncul lagi
+            // Simpan dan gabungkan seluruh ID transaksi & katalog yang pernah dihapus
             const existingDeleted = Array.isArray(existingData.deletedTransactionIds) ? existingData.deletedTransactionIds : [];
             const incomingDeleted = Array.isArray(payload.deletedTransactionIds) ? payload.deletedTransactionIds : [];
             const allDeletedIds = Array.from(new Set([...existingDeleted, ...incomingDeleted]));
 
-            // Gabungkan data agar transaksi antar-device tidak saling menimpa
+            const existingDeletedCat = Array.isArray(existingData.deletedCatalogIds) ? existingData.deletedCatalogIds : [];
+            const incomingDeletedCat = Array.isArray(payload.deletedCatalogIds) ? payload.deletedCatalogIds : [];
+            const allDeletedCatIds = Array.from(new Set([...existingDeletedCat, ...incomingDeletedCat]));
+
+            // Gabungkan data agar transaksi & katalog antar-device tidak saling menimpa
             const mergedTransactions = mergeTransactions(
                 existingData.transactions,
                 payload.transactions,
@@ -280,14 +320,21 @@ module.exports = async function handler(req, res) {
                 payload.loyaltyClearedVehicles
             );
 
+            const mergedCatalog = mergeCatalog(
+                existingData.catalog,
+                payload.catalog,
+                allDeletedCatIds
+            );
+
             const mergedPayload = {
                 ...existingData,
                 ...payload,
                 profile: payload.profile ? { ...(existingData.profile || {}), ...payload.profile } : existingData.profile,
                 services: (Array.isArray(payload.services) && payload.services.length > 0) ? payload.services : (existingData.services || []),
-                catalog: (Array.isArray(payload.catalog) && payload.catalog.length > 0) ? payload.catalog : (existingData.catalog || []),
+                catalog: mergedCatalog.length > 0 ? mergedCatalog : (existingData.catalog || []),
                 transactions: mergedTransactions,
                 deletedTransactionIds: allDeletedIds,
+                deletedCatalogIds: allDeletedCatIds,
                 freeWashVouchers: mergedVouchers,
                 loyaltyClearedVehicles: mergedClearedVehicles,
                 adminEmail: payload.adminEmail || existingData.adminEmail,
