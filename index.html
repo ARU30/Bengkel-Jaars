@@ -134,28 +134,8 @@
                             </button>
 
                             <div id="admin-logged-in-bar" class="hidden items-center gap-2">
-                                <span class="hidden md:inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2.5 py-1.5 rounded-xl">
-                                    <span>👑</span>
-                                    <span>Admin Aktif</span>
-                                </span>
-                                <!-- Tombol Kelola Kupon & Struk Cuci Gratis 7x -->
-                                <button id="btn-admin-nav-loyalty-wash" type="button" onclick="openLoyaltyWashModal()"
-                                    class="px-2.5 sm:px-3 py-1.5 sm:py-2 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 text-cyan-800 text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
-                                    title="Cek Pelanggan Cuci 7x & Cetak Struk Penukaran Cuci Gratis">
-                                    <span>🎟️</span>
-                                    <span class="hidden lg:inline">Loyalty Cuci 7x</span>
-                                    <span id="nav-free-wash-badge" class="px-1.5 py-0.2 text-[10px] bg-cyan-700 text-white rounded-full font-black hidden">0</span>
-                                </button>
-                                <!-- Tombol Navigasi Tutup/Buka Bengkel Khusus Admin -->
-                                <button id="btn-admin-nav-toggle-shop" type="button" onclick="toggleShopStatus('nav')"
-                                    class="px-2.5 sm:px-3 py-1.5 sm:py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
-                                    title="Ubah Status Buka/Tutup Bengkel (Ditampilkan ke Pengguna)">
-                                    <span id="nav-shop-toggle-icon">🔴</span>
-                                    <span id="nav-shop-toggle-label" class="hidden sm:inline">Tutup Bengkel</span>
-                                    <span class="sm:hidden">Tutup</span>
-                                </button>
                                 <button id="btn-admin-logout" type="button"
-                                    class="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs"
+                                    class="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
                                     title="Kunci kembali ke mode Kasir / Pengguna biasa">
                                     <span>🚪</span>
                                     <span class="hidden sm:inline">Kunci / Keluar</span>
@@ -2561,21 +2541,26 @@
             </div>
 
             <!-- Stats Bar -->
-            <div class="grid grid-cols-3 gap-3 text-center">
-                <div class="p-3 bg-cyan-50 border border-cyan-200 rounded-2xl">
-                    <div class="text-[10px] font-bold text-cyan-800 uppercase tracking-wide">Total Pelanggan Cuci</div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
+                <div onclick="setLoyaltyCustomerFilter('all')" class="p-2.5 sm:p-3 bg-cyan-50 border border-cyan-200 rounded-2xl cursor-pointer hover:bg-cyan-100/70 transition-all" title="Klik untuk lihat semua kendaraan">
+                    <div class="text-[10px] font-bold text-cyan-800 uppercase tracking-wide">Total Pelanggan</div>
                     <div id="loyalty-stat-total-customers" class="text-xl font-black text-cyan-900 mt-0.5">0</div>
                     <div class="text-[9px] text-cyan-700">Pelanggan terdata</div>
                 </div>
-                <div class="p-3 bg-amber-50 border border-amber-200 rounded-2xl">
-                    <div class="text-[10px] font-bold text-amber-800 uppercase tracking-wide">Berhak Cuci Gratis (≥7x)</div>
+                <div onclick="setLoyaltyCustomerFilter('eligible')" class="p-2.5 sm:p-3 bg-amber-50 border border-amber-200 rounded-2xl cursor-pointer hover:bg-amber-100/70 transition-all" title="Klik untuk lihat yang siap klaim">
+                    <div class="text-[10px] font-bold text-amber-800 uppercase tracking-wide">Siap Klaim (≥7x)</div>
                     <div id="loyalty-stat-eligible-count" class="text-xl font-black text-amber-900 mt-0.5">0</div>
-                    <div class="text-[9px] text-amber-700">Siap klaim voucher</div>
+                    <div class="text-[9px] text-amber-700">Berhak kupon gratis</div>
                 </div>
-                <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl">
-                    <div class="text-[10px] font-bold text-emerald-800 uppercase tracking-wide">Voucher Aktif Diterbitkan</div>
+                <div onclick="setLoyaltyCustomerFilter('active')" class="p-2.5 sm:p-3 bg-emerald-50 border border-emerald-200 rounded-2xl cursor-pointer hover:bg-emerald-100/70 transition-all" title="Klik untuk lihat pelanggan dengan kupon aktif">
+                    <div class="text-[10px] font-bold text-emerald-800 uppercase tracking-wide">Kupon Aktif</div>
                     <div id="loyalty-stat-active-vouchers" class="text-xl font-black text-emerald-900 mt-0.5">0</div>
                     <div class="text-[9px] text-emerald-700">Struk siap ditukar</div>
+                </div>
+                <div onclick="setLoyaltyCustomerFilter('claimed')" class="p-2.5 sm:p-3 bg-purple-50 border border-purple-200 rounded-2xl cursor-pointer hover:bg-purple-100/70 transition-all" title="Klik untuk lihat kendaraan yang sudah klaim cuci">
+                    <div class="text-[10px] font-bold text-purple-800 uppercase tracking-wide">Sudah Klaim Cuci</div>
+                    <div id="loyalty-stat-claimed-count" class="text-xl font-black text-purple-900 mt-0.5">0</div>
+                    <div class="text-[9px] text-purple-700">Selesai ditukarkan</div>
                 </div>
             </div>
 
@@ -2615,6 +2600,43 @@
 
             <!-- Sub-tab 1: Daftar Pelanggan Cuci -->
             <div id="loyalty-subtab-customers" class="flex flex-col gap-3">
+                <!-- Navigation Filter Bar & Hapus Kendaraan -->
+                <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+                    <div class="flex items-center gap-1.5 overflow-x-auto text-xs font-bold">
+                        <span class="text-[10px] uppercase text-slate-400 font-bold mr-1 shrink-0">Navigasi:</span>
+                        <button type="button" id="filter-cust-all-btn" onclick="setLoyaltyCustomerFilter('all')"
+                            class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-slate-900 text-white shrink-0">
+                            Semua (<span id="count-cust-all">0</span>)
+                        </button>
+                        <button type="button" id="filter-cust-eligible-btn" onclick="setLoyaltyCustomerFilter('eligible')"
+                            class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 shrink-0">
+                            Siap Klaim ≥7x (<span id="count-cust-eligible">0</span>)
+                        </button>
+                        <button type="button" id="filter-cust-active-btn" onclick="setLoyaltyCustomerFilter('active')"
+                            class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-cyan-700 border border-cyan-200 hover:bg-cyan-50 shrink-0">
+                            🎟️ Kupon Aktif (<span id="count-cust-active">0</span>)
+                        </button>
+                        <button type="button" id="filter-cust-claimed-btn" onclick="setLoyaltyCustomerFilter('claimed')"
+                            class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-purple-700 border border-purple-200 hover:bg-purple-50 shrink-0">
+                            🎁 Sudah Klaim (<span id="count-cust-claimed">0</span>)
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <button type="button" id="btn-delete-all-active-vehicles" onclick="deleteAllActiveVoucherVehicles()"
+                            class="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shrink-0"
+                            title="Hapus semua kendaraan yang masih memiliki kupon aktif (belum diklaim)">
+                            <span>🗑️</span>
+                            <span>Hapus Semua Kupon Aktif</span>
+                        </button>
+                        <button type="button" id="btn-delete-all-claimed-vehicles" onclick="deleteAllClaimedWashVehicles()"
+                            class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shrink-0"
+                            title="Hapus semua riwayat kendaraan yang sudah selesai mengklaim cuci gratis">
+                            <span>🗑️</span>
+                            <span>Hapus yg Sudah Klaim</span>
+                        </button>
+                    </div>
+                </div>
+
                 <div class="overflow-x-auto rounded-xl border border-slate-200">
                     <table class="w-full text-xs text-left">
                         <thead class="bg-slate-100 text-slate-600 font-bold uppercase text-[10px] border-b border-slate-200">
@@ -2636,6 +2658,31 @@
 
             <!-- Sub-tab 2: Riwayat Struk Voucher Cuci Gratis -->
             <div id="loyalty-subtab-vouchers" class="hidden flex flex-col gap-3">
+                <!-- Navigation Filter Bar & Hapus Struk yg Sudah Diklaim -->
+                <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+                    <div class="flex items-center gap-1.5 overflow-x-auto text-xs font-bold">
+                        <span class="text-[10px] uppercase text-slate-400 font-bold mr-1 shrink-0">Navigasi:</span>
+                        <button type="button" id="filter-vch-all-btn" onclick="setLoyaltyVoucherFilter('all')"
+                            class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-slate-900 text-white shrink-0">
+                            Semua Struk (<span id="count-vch-all">0</span>)
+                        </button>
+                        <button type="button" id="filter-vch-active-btn" onclick="setLoyaltyVoucherFilter('active')"
+                            class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 shrink-0">
+                            ✅ Kupon Aktif (<span id="count-vch-active">0</span>)
+                        </button>
+                        <button type="button" id="filter-vch-redeemed-btn" onclick="setLoyaltyVoucherFilter('redeemed')"
+                            class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-purple-700 border border-purple-200 hover:bg-purple-50 shrink-0">
+                            🎁 Sudah Ditukar (<span id="count-vch-redeemed">0</span>)
+                        </button>
+                    </div>
+                    <button type="button" id="btn-delete-all-claimed-vouchers" onclick="deleteAllClaimedWashVouchers()"
+                        class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer shrink-0"
+                        title="Hapus semua struk kupon yang sudah selesai ditukarkan">
+                        <span>🗑️</span>
+                        <span>Hapus Semua Struk yg Sudah Diklaim</span>
+                    </button>
+                </div>
+
                 <div class="overflow-x-auto rounded-xl border border-slate-200">
                     <table class="w-full text-xs text-left">
                         <thead class="bg-slate-100 text-slate-600 font-bold uppercase text-[10px] border-b border-slate-200">
@@ -2735,9 +2782,9 @@
         </div>
     </div>
 
-    <div id="print-receipt-section" class="thermal-receipt"></div>
-    <div id="print-free-wash-section" class="thermal-receipt"></div>
-    <div id="print-daily-summary-section"></div>
+    <div id="print-receipt-section" class="thermal-receipt hidden" style="display: none !important;"></div>
+    <div id="print-free-wash-section" class="thermal-receipt hidden" style="display: none !important;"></div>
+    <div id="print-daily-summary-section" class="hidden" style="display: none !important;"></div>
 
     <!-- APP SCRIPTS -->
     <script src="js/default-data.js"></script>

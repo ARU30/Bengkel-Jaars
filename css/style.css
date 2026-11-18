@@ -48,6 +48,13 @@
     margin: 8px 0;
 }
 
+/* Print Containers (Strictly hidden on screen for both user & admin) */
+#print-receipt-section,
+#print-free-wash-section,
+#print-daily-summary-section {
+    display: none !important;
+}
+
 /* Print Rules - Optimised for 58mm / 80mm and A4 */
 @media print {
     body * {
@@ -61,10 +68,12 @@
     #print-daily-summary-section,
     #print-daily-summary-section * {
         visibility: visible;
+        display: block !important;
     }
 
     #print-receipt-section,
     #print-free-wash-section {
+        display: block !important;
         position: absolute;
         left: 0;
         top: 0;

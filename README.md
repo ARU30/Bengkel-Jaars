@@ -106,7 +106,27 @@ Aplikasi ini dapat langsung dijalankan di browser tanpa perlu server, serta **10
      - **Hapus & Reset Master:** Admin dapat menghapus produk satuan atau mereset ke katalog default 17 produk rekomendasi kapan saja.
      - **Backup & Restore:** Data katalog ban dan oli otomatis ikut tersimpan saat ekspor/impor file JSON bengkel.
 
-10. **🌐 Sinkronisasi Cloud Antar-Perangkat Otomatis (Vercel & Multi-Device Auto-Sync):**
+11. **🚿 Program Loyalitas Cuci Kendaraan (Cuci 7x Gratis 1x) & Kelola Kupon/Struk (Sistem Admin):**
+    - **Sistem Akumulasi Stamp Otomatis:** Setiap transaksi layanan cuci mobil/motor secara otomatis menghitung jumlah stamp kunjungan pelanggan berdasarkan nomor plat kendaraan atau nomor WhatsApp.
+    - **Struk Bukti Penukaran Cuci Gratis Resmi:** Pelanggan yang telah mencapai 7 kali cuci berhak atas 1x cuci gratis dengan struk bukti fisik/digital resmi lengkap dengan kode kupon unik, verifikasi stamp, masa berlaku 30 hari, dan rincian biaya Rp 0.
+    - **Navigasi Filter Status Pelanggan:**
+      - `Semua Kendaraan` (semua pelanggan cuci terdata)
+      - `Siap Klaim ≥7x` (pelanggan yang berhak atas cuci gratis)
+      - `🎟️ Kupon Aktif` (pelanggan yang masih memiliki kupon aktif belum ditukar)
+      - `🎁 Sudah Klaim` (kendaraan yang telah berhasil menukarkan kupon gratis)
+    - **Fitur Hapus Kendaraan Berkupon Aktif (Belum Diklaim):**
+      - **Hapus Satuan per Kendaraan:** Tombol `🗑️ Hapus` di baris setiap kendaraan yang masih memiliki kupon aktif untuk membatalkan kupon dan membersihkan kendaraan dari daftar loyalitas.
+      - **Hapus Massal (1-Klik):** Tombol `🗑️ Hapus Semua Kupon Aktif` di bar navigasi untuk membersihkan semua kendaraan berkupon aktif sekaligus.
+    - **Fitur Hapus Kendaraan yg Sudah Klaim Cuci:**
+      - **Hapus Satuan per Kendaraan:** Tombol `🗑️ Hapus Klaim` di setiap baris kendaraan yang sudah menukarkan cuci gratis.
+      - **Hapus Massal (1-Klik):** Tombol `🗑️ Hapus yg Sudah Klaim` untuk membersihkan seluruh data riwayat klaim yang sudah selesai.
+      - **Reset Siklus Stamp Bersih:** Menghapus kupon dan secara otomatis mereset siklus stamp kendaraan agar siap memulai pengumpulan stamp baru dari 0 pada kunjungan berikutnya.
+    - **Navigasi Riwayat Struk Voucher & Penghapusan:**
+      - Filter `Semua Struk`, `✅ Kupon Aktif`, dan `🎁 Sudah Ditukar`.
+      - Tombol hapus satuan `🗑️` pada semua voucher (aktif maupun sudah ditukar) serta tombol massal `🗑️ Hapus Semua Struk yg Sudah Diklaim`.
+    - **4 Kartu Statistik Cepat:** Total Pelanggan Cuci, Siap Klaim (≥7x), Kupon Aktif Diterbitkan, dan Sudah Klaim Cuci (interaktif dengan 1-klik filter).
+
+12. **🌐 Sinkronisasi Cloud Antar-Perangkat Otomatis (Vercel & Multi-Device Auto-Sync):**
    - **Otomatis Berubah di Semua Perangkat:** Saat Admin mengubah tarif layanan, menambah produk katalog (seperti ban IRC SS 570F), atau mengedit profil bengkel di laptop, sistem secara otomatis mengirimkan konfigurasi ke Cloud Vercel (`/api/sync`) atau database cloud.
    - **Tampilan Khusus Admin:** Tombol & status Cloud Sync hanya ditampilkan untuk admin saat login (disembunyikan dari sistem pengguna umum agar tampilan pelanggan tetap bersih dan profesional).
    - **Perangkat Lain Tidak Perlu Mengulang Konfigurasi:** Saat HP kasir, tablet, atau laptop lain membuka aplikasi di Vercel, sistem otomatis menarik data terbaru di latar belakang (*background sync*) dan memperbarui penyimpanan lokal browser.

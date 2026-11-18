@@ -55,6 +55,9 @@ let state = {
     // Program Loyalitas Cuci Kendaraan (Cuci 7x Gratis 1x)
     freeWashVouchers: JSON.parse(localStorage.getItem('bengkel_free_wash_vouchers') || '[]'),
     activeLoyaltySubTab: 'customers', // 'customers' | 'vouchers'
+    loyaltyCustomerFilter: 'all', // 'all' | 'eligible' | 'claimed'
+    loyaltyVoucherFilter: 'all', // 'all' | 'active' | 'redeemed'
+    loyaltyClearedVehicles: JSON.parse(localStorage.getItem('jaars_loyalty_cleared') || '[]'),
     
     // Cloud Synchronization State (Vercel & Multi-Device)
     cloudSyncStatus: 'synced', // 'synced' | 'syncing' | 'offline' | 'error'
@@ -155,6 +158,18 @@ function loadData() {
             state.freeWashVouchers = [];
         }
 
+        const savedClearedLoyalty = localStorage.getItem('jaars_loyalty_cleared');
+        if (savedClearedLoyalty) {
+            try {
+                const parsedCleared = JSON.parse(savedClearedLoyalty);
+                state.loyaltyClearedVehicles = Array.isArray(parsedCleared) ? parsedCleared : [];
+            } catch (e) {
+                state.loyaltyClearedVehicles = [];
+            }
+        } else {
+            state.loyaltyClearedVehicles = [];
+        }
+
         // Check if admin is currently logged in in this session
         state.isAdmin = sessionStorage.getItem('bengkel_is_admin') === 'true';
     } catch (e) {
@@ -165,6 +180,7 @@ function loadData() {
         state.catalog = [ ...DEFAULT_CATALOG ];
         state.transactions = typeof DEFAULT_TRANSACTIONS !== 'undefined' ? [ ...DEFAULT_TRANSACTIONS ] : [];
         state.freeWashVouchers = [];
+        state.loyaltyClearedVehicles = [];
     }
 }
 
@@ -602,6 +618,14 @@ document.addEventListener('DOMContentLoaded', () => {
     renderAll();
     startClock();
     initCloudSync();
+
+    // Pastikan seluruh kontainer cetak bersih saat halaman dimuat
+    const p1 = document.getElementById('print-free-wash-section');
+    const p2 = document.getElementById('print-receipt-section');
+    const p3 = document.getElementById('print-daily-summary-section');
+    if (p1) p1.innerHTML = '';
+    if (p2) p2.innerHTML = '';
+    if (p3) p3.innerHTML = '';
 });
 
 function startClock() {
@@ -3694,6 +3718,10 @@ function saveFreeWashVouchers() {
     }
 }
 
+function saveLoyaltyClearedVehicles() {
+    localStorage.setItem('jaars_loyalty_cleared', JSON.stringify(state.loyaltyClearedVehicles || []));
+}
+
 function getCustomerWashHistory(identifier) {
     if (!identifier) {
         return {
@@ -3714,12 +3742,24 @@ function getCustomerWashHistory(identifier) {
     const normId = normalizePlate(identifier);
     const normPhoneId = normalizePhone(identifier);
 
+    // Ambil data kendaraan yang sudah pernah dibersihkan/direset klaimnya
+    const clearedList = state.loyaltyClearedVehicles || [];
+    const clearedEntry = clearedList.slice().reverse().find(c => 
+        (normId && c.plate && c.plate === normId) || 
+        (normPhoneId && c.phone && c.phone === normPhoneId)
+    );
+
     const washTxList = (state.transactions || []).filter(tx => {
         if (!hasWashService(tx)) return false;
         const pNorm = normalizePlate(tx.plateNumber);
         const phNorm = normalizePhone(tx.customerPhone);
-        return (normId && pNorm && pNorm === normId) || 
-               (normPhoneId && phNorm && phNorm === normPhoneId);
+        const matches = (normId && pNorm && pNorm === normId) || 
+                        (normPhoneId && phNorm && phNorm === normPhoneId);
+        if (!matches) return false;
+        if (clearedEntry && new Date(tx.date) <= new Date(clearedEntry.clearedAt)) {
+            return false;
+        }
+        return true;
     }).sort((a, b) => new Date(a.date) - new Date(b.date));
 
     const washCount = washTxList.length;
@@ -3728,8 +3768,13 @@ function getCustomerWashHistory(identifier) {
     const customerVouchers = (state.freeWashVouchers || []).filter(v => {
         const vPlate = normalizePlate(v.plateNumber);
         const vPhone = normalizePhone(v.customerPhone);
-        return (normId && vPlate && vPlate === normId) ||
-               (normPhoneId && vPhone && vPhone === normPhoneId);
+        const matches = (normId && vPlate && vPlate === normId) ||
+                        (normPhoneId && vPhone && vPhone === normPhoneId);
+        if (!matches) return false;
+        if (clearedEntry && new Date(v.issuedAt) <= new Date(clearedEntry.clearedAt)) {
+            return false;
+        }
+        return true;
     });
 
     const activeVouchers = customerVouchers.filter(v => v.status === 'active');
@@ -3737,7 +3782,7 @@ function getCustomerWashHistory(identifier) {
 
     const stampsInCycle = washCount > 0 ? ((washCount % 7 === 0) ? 7 : (washCount % 7)) : 0;
     const vouchersAllowed = Math.floor(washCount / 7);
-    const isEligibleForFreeWash = washCount >= 7 && (customerVouchers.length < vouchersAllowed || (stampsInCycle === 7 && activeVouchers.length === 0));
+    const isEligibleForFreeWash = washCount >= 7 && (customerVouchers.length < vouchersAllowed);
 
     return {
         washCount,
@@ -3756,13 +3801,25 @@ function getCustomerWashHistory(identifier) {
 
 function getAllWashCustomers() {
     const map = new Map();
+    const clearedList = state.loyaltyClearedVehicles || [];
 
     (state.transactions || []).forEach(tx => {
         if (!hasWashService(tx)) return;
         const plate = (tx.plateNumber && tx.plateNumber !== '-') ? tx.plateNumber : '';
         const phone = tx.customerPhone || '';
-        const key = normalizePlate(plate) || normalizePhone(phone);
+        const normP = normalizePlate(plate);
+        const normPh = normalizePhone(phone);
+        const key = normP || normPh;
         if (!key) return;
+
+        // Jangan masukkan transaksi cuci yang sudah dibersihkan/direset
+        const clearedEntry = clearedList.slice().reverse().find(c => 
+            (normP && c.plate && c.plate === normP) || 
+            (normPh && c.phone && c.phone === normPh)
+        );
+        if (clearedEntry && new Date(tx.date) <= new Date(clearedEntry.clearedAt)) {
+            return;
+        }
 
         if (!map.has(key)) {
             map.set(key, {
@@ -3789,8 +3846,20 @@ function getAllWashCustomers() {
     (state.freeWashVouchers || []).forEach(v => {
         const plate = v.plateNumber || '';
         const phone = v.customerPhone || '';
-        const key = normalizePlate(plate) || normalizePhone(phone);
+        const normP = normalizePlate(plate);
+        const normPh = normalizePhone(phone);
+        const key = normP || normPh;
         if (!key) return;
+
+        // Jangan masukkan voucher yang sudah dibersihkan
+        const clearedEntry = clearedList.slice().reverse().find(c => 
+            (normP && c.plate && c.plate === normP) || 
+            (normPh && c.phone && c.phone === normPh)
+        );
+        if (clearedEntry && new Date(v.issuedAt) <= new Date(clearedEntry.clearedAt)) {
+            return;
+        }
+
         if (!map.has(key)) {
             map.set(key, {
                 key,
@@ -3813,7 +3882,7 @@ function getAllWashCustomers() {
             vouchers: history.vouchers,
             activeVouchers: history.activeVouchers,
             redeemedVouchers: history.redeemedVouchers,
-            isEligible: history.isEligibleForFreeWash || (history.washCount >= 7)
+            isEligible: history.isEligibleForFreeWash || (history.washCount >= 7 && (history.vouchers || []).length === 0)
         };
     });
 
@@ -4022,9 +4091,10 @@ function openFreeWashReceiptModal(voucherOrId) {
         receiptArea.innerHTML = renderFreeWashReceiptHTML(voucher);
     }
 
+    // Pastikan printSection tetap bersih dan tidak tampil di layar halaman
     const printSection = document.getElementById('print-free-wash-section');
     if (printSection) {
-        printSection.innerHTML = renderFreeWashReceiptHTML(voucher);
+        printSection.innerHTML = '';
     }
 
     const phoneInput = document.getElementById('free-wash-wa-phone');
@@ -4079,6 +4149,11 @@ function printFreeWashVoucher(voucherId) {
     }
     setTimeout(() => {
         window.print();
+        setTimeout(() => {
+            if (printSection) {
+                printSection.innerHTML = '';
+            }
+        }, 1000);
     }, 200);
 }
 
@@ -4172,6 +4247,8 @@ function redeemFreeWashInPOS(voucherId) {
     if (receiptModal) receiptModal.classList.add('hidden');
     const loyaltyModal = document.getElementById('modal-loyalty-wash');
     if (loyaltyModal) loyaltyModal.classList.add('hidden');
+    const printSection = document.getElementById('print-free-wash-section');
+    if (printSection) printSection.innerHTML = '';
 
     showToast(`🎁 Voucher ${voucher.code} berhasil dimasukkan ke Kasir! Total biaya Cuci Rp 0.`);
 }
@@ -4305,6 +4382,7 @@ function updateLoyaltyBadgesAndCounts() {
     const allCustomers = getAllWashCustomers();
     const eligibleCount = allCustomers.filter(c => c.isEligible).length;
     const activeVouchersCount = (state.freeWashVouchers || []).filter(v => v.status === 'active').length;
+    const claimedVehiclesCount = allCustomers.filter(c => (c.redeemedVouchers || []).length > 0).length;
 
     const navBadge = document.getElementById('badge-eligible-wash-count');
     if (navBadge) {
@@ -4329,10 +4407,199 @@ function updateLoyaltyBadgesAndCounts() {
     const statTotalEl = document.getElementById('loyalty-stat-total-customers');
     const statEligibleEl = document.getElementById('loyalty-stat-eligible-count');
     const statActiveVchEl = document.getElementById('loyalty-stat-active-vouchers');
+    const statClaimedEl = document.getElementById('loyalty-stat-claimed-count');
 
     if (statTotalEl) statTotalEl.textContent = allCustomers.length;
     if (statEligibleEl) statEligibleEl.textContent = eligibleCount;
     if (statActiveVchEl) statActiveVchEl.textContent = activeVouchersCount;
+    if (statClaimedEl) statClaimedEl.textContent = claimedVehiclesCount;
+}
+
+function setLoyaltyCustomerFilter(filterKey) {
+    state.loyaltyCustomerFilter = filterKey || 'all';
+    renderLoyaltyWashManagerModal();
+}
+
+function setLoyaltyVoucherFilter(filterKey) {
+    state.loyaltyVoucherFilter = filterKey || 'all';
+    renderLoyaltyWashManagerModal();
+}
+
+function deleteActiveVoucherCustomer(identifier) {
+    if (!identifier) return;
+
+    const normId = normalizePlate(identifier);
+    const normPhoneId = normalizePhone(identifier);
+
+    const history = getCustomerWashHistory(identifier);
+    const label = history.plateNumber || identifier;
+    const name = history.customerName ? ` (${history.customerName})` : '';
+
+    if (!confirm(`Yakin ingin menghapus kendaraan Plat "${label}"${name} yang masih memiliki kupon aktif?\n\nKupon voucher aktif (belum diklaim) akan dibatalkan/dihapus dan data kendaraan ini akan dibersihkan dari daftar loyalitas pelanggan.`)) {
+        return;
+    }
+
+    // 1. Hapus semua voucher untuk kendaraan ini dari daftar vouchers
+    state.freeWashVouchers = (state.freeWashVouchers || []).filter(v => {
+        const vPlate = normalizePlate(v.plateNumber);
+        const vPhone = normalizePhone(v.customerPhone);
+        const isMatch = (normId && vPlate && vPlate === normId) ||
+                        (normPhoneId && vPhone && vPhone === normPhoneId);
+        return !isMatch;
+    });
+    saveFreeWashVouchers();
+
+    // 2. Bersihkan kendaraan ini dari riwayat transaksi loyalitas
+    const cleared = state.loyaltyClearedVehicles || [];
+    cleared.push({
+        plate: normId || normalizePlate(history.plateNumber),
+        phone: normPhoneId || normalizePhone(history.customerPhone),
+        clearedAt: new Date().toISOString()
+    });
+    state.loyaltyClearedVehicles = cleared;
+    saveLoyaltyClearedVehicles();
+
+    renderLoyaltyWashManagerModal();
+    showToast(`🗑️ Kendaraan Plat ${label} dan kupon aktifnya berhasil dihapus.`);
+}
+
+function deleteAllActiveVoucherVehicles() {
+    const allCustomers = getAllWashCustomers();
+    const activeCustomers = allCustomers.filter(c => (c.activeVouchers || []).length > 0);
+
+    if (activeCustomers.length === 0) {
+        showToast('ℹ️ Tidak ada kendaraan yang memiliki kupon aktif.');
+        return;
+    }
+
+    if (!confirm(`Yakin ingin menghapus semua (${activeCustomers.length}) kendaraan yang masih memiliki kupon aktif (belum diklaim)?\n\nSemua kupon aktif akan dibatalkan dan kendaraan-kendaraan ini akan dibersihkan dari daftar loyalitas.`)) {
+        return;
+    }
+
+    // Hapus semua voucher berstatus active
+    state.freeWashVouchers = (state.freeWashVouchers || []).filter(v => v.status !== 'active');
+    saveFreeWashVouchers();
+
+    // Tandai semua pelanggan berkupon aktif ke dalam cleared
+    const cleared = state.loyaltyClearedVehicles || [];
+    const nowIso = new Date().toISOString();
+    activeCustomers.forEach(c => {
+        cleared.push({
+            plate: normalizePlate(c.plateNumber),
+            phone: normalizePhone(c.customerPhone),
+            clearedAt: nowIso
+        });
+    });
+    state.loyaltyClearedVehicles = cleared;
+    saveLoyaltyClearedVehicles();
+
+    renderLoyaltyWashManagerModal();
+    showToast(`🗑️ Berhasil menghapus ${activeCustomers.length} kendaraan berkupon aktif.`);
+}
+
+function deleteClaimedCustomerVouchers(identifier) {
+    if (!identifier) return;
+
+    const normId = normalizePlate(identifier);
+    const normPhoneId = normalizePhone(identifier);
+
+    const history = getCustomerWashHistory(identifier);
+    const label = history.plateNumber || identifier;
+
+    if (!confirm(`Yakin ingin menghapus riwayat kendaraan Plat "${label}" yang sudah klaim cuci gratis?\n\nKupon voucher yang sudah ditukar akan dihapus dan siklus stamp akan dibersihkan/direset untuk kunjungan berikutnya.`)) {
+        return;
+    }
+
+    // 1. Hapus voucher yang sudah redeemed untuk kendaraan ini
+    state.freeWashVouchers = (state.freeWashVouchers || []).filter(v => {
+        const vPlate = normalizePlate(v.plateNumber);
+        const vPhone = normalizePhone(v.customerPhone);
+        const isMatch = (normId && vPlate && vPlate === normId) ||
+                        (normPhoneId && vPhone && vPhone === normPhoneId);
+        return !(isMatch && v.status === 'redeemed');
+    });
+    saveFreeWashVouchers();
+
+    // 2. Tandai kendaraan ini dalam riwayat pembersihan/reset
+    const cleared = state.loyaltyClearedVehicles || [];
+    cleared.push({
+        plate: normId || normalizePlate(history.plateNumber),
+        phone: normPhoneId || normalizePhone(history.customerPhone),
+        clearedAt: new Date().toISOString()
+    });
+    state.loyaltyClearedVehicles = cleared;
+    saveLoyaltyClearedVehicles();
+
+    renderLoyaltyWashManagerModal();
+    showToast(`🗑️ Data klaim cuci kendaraan Plat ${label} berhasil dihapus.`);
+}
+
+function deleteAllClaimedWashVehicles() {
+    const allCustomers = getAllWashCustomers();
+    const claimedCustomers = allCustomers.filter(c => (c.redeemedVouchers || []).length > 0);
+
+    if (claimedCustomers.length === 0) {
+        showToast('ℹ️ Tidak ada data kendaraan yang sudah klaim cuci.');
+        return;
+    }
+
+    if (!confirm(`Yakin ingin menghapus semua (${claimedCustomers.length}) kendaraan yang sudah mengklaim cuci gratis?\n\nSemua kupon yang sudah selesai ditukar akan dihapus dan siklus stamp pelanggan akan direset.`)) {
+        return;
+    }
+
+    // Hapus semua voucher berstatus redeemed
+    state.freeWashVouchers = (state.freeWashVouchers || []).filter(v => v.status !== 'redeemed');
+    saveFreeWashVouchers();
+
+    // Tandai semua pelanggan yang klaim ke dalam cleared
+    const cleared = state.loyaltyClearedVehicles || [];
+    const nowIso = new Date().toISOString();
+    claimedCustomers.forEach(c => {
+        cleared.push({
+            plate: normalizePlate(c.plateNumber),
+            phone: normalizePhone(c.customerPhone),
+            clearedAt: nowIso
+        });
+    });
+    state.loyaltyClearedVehicles = cleared;
+    saveLoyaltyClearedVehicles();
+
+    renderLoyaltyWashManagerModal();
+    showToast(`🗑️ Berhasil menghapus ${claimedCustomers.length} kendaraan yang sudah klaim cuci.`);
+}
+
+function deleteAllClaimedWashVouchers() {
+    const redeemedList = (state.freeWashVouchers || []).filter(v => v.status === 'redeemed');
+
+    if (redeemedList.length === 0) {
+        showToast('ℹ️ Tidak ada struk voucher yang berstatus sudah diklaim.');
+        return;
+    }
+
+    if (!confirm(`Yakin ingin menghapus semua (${redeemedList.length}) struk voucher yang sudah diklaim / ditukarkan?`)) {
+        return;
+    }
+
+    state.freeWashVouchers = (state.freeWashVouchers || []).filter(v => v.status !== 'redeemed');
+    saveFreeWashVouchers();
+
+    renderLoyaltyWashManagerModal();
+    showToast(`🗑️ Berhasil menghapus ${redeemedList.length} struk voucher yang sudah diklaim.`);
+}
+
+function deleteVoucherById(voucherId) {
+    const voucher = (state.freeWashVouchers || []).find(v => v.id === voucherId);
+    if (!voucher) return;
+
+    if (!confirm(`Yakin ingin menghapus struk voucher #${voucher.code} (Plat: ${voucher.plateNumber})?`)) {
+        return;
+    }
+
+    state.freeWashVouchers = (state.freeWashVouchers || []).filter(v => v.id !== voucherId);
+    saveFreeWashVouchers();
+
+    renderLoyaltyWashManagerModal();
+    showToast(`🗑️ Struk voucher #${voucher.code} berhasil dihapus.`);
 }
 
 function openLoyaltyWashModal(subTab = 'customers') {
@@ -4380,22 +4647,109 @@ function renderLoyaltyWashManagerModal() {
     const allCustomers = getAllWashCustomers();
     const allVouchers = state.freeWashVouchers || [];
 
+    // Update Filter navigation count badges
+    const countCustAllEl = document.getElementById('count-cust-all');
+    const countCustEligibleEl = document.getElementById('count-cust-eligible');
+    const countCustActiveEl = document.getElementById('count-cust-active');
+    const countCustClaimedEl = document.getElementById('count-cust-claimed');
+    const eligibleCount = allCustomers.filter(c => c.isEligible).length;
+    const activeCustCount = allCustomers.filter(c => (c.activeVouchers || []).length > 0).length;
+    const claimedCustCount = allCustomers.filter(c => (c.redeemedVouchers || []).length > 0).length;
+
+    if (countCustAllEl) countCustAllEl.textContent = allCustomers.length;
+    if (countCustEligibleEl) countCustEligibleEl.textContent = eligibleCount;
+    if (countCustActiveEl) countCustActiveEl.textContent = activeCustCount;
+    if (countCustClaimedEl) countCustClaimedEl.textContent = claimedCustCount;
+
+    const countVchAllEl = document.getElementById('count-vch-all');
+    const countVchActiveEl = document.getElementById('count-vch-active');
+    const countVchRedeemedEl = document.getElementById('count-vch-redeemed');
+    const activeVchCount = allVouchers.filter(v => v.status === 'active').length;
+    const redeemedVchCount = allVouchers.filter(v => v.status === 'redeemed').length;
+
+    if (countVchAllEl) countVchAllEl.textContent = allVouchers.length;
+    if (countVchActiveEl) countVchActiveEl.textContent = activeVchCount;
+    if (countVchRedeemedEl) countVchRedeemedEl.textContent = redeemedVchCount;
+
+    // Filter Navigation Buttons Styling
+    const btnCustAll = document.getElementById('filter-cust-all-btn');
+    const btnCustEligible = document.getElementById('filter-cust-eligible-btn');
+    const btnCustActive = document.getElementById('filter-cust-active-btn');
+    const btnCustClaimed = document.getElementById('filter-cust-claimed-btn');
+    const activeCustFilter = state.loyaltyCustomerFilter || 'all';
+
+    if (btnCustAll) btnCustAll.className = activeCustFilter === 'all'
+        ? 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-slate-900 text-white shrink-0'
+        : 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 shrink-0';
+
+    if (btnCustEligible) btnCustEligible.className = activeCustFilter === 'eligible'
+        ? 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-amber-600 text-white shrink-0 shadow-xs'
+        : 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 shrink-0';
+
+    if (btnCustActive) btnCustActive.className = activeCustFilter === 'active'
+        ? 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-cyan-700 text-white shrink-0 shadow-xs'
+        : 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-cyan-700 border border-cyan-200 hover:bg-cyan-50 shrink-0';
+
+    if (btnCustClaimed) btnCustClaimed.className = activeCustFilter === 'claimed'
+        ? 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-purple-700 text-white shrink-0 shadow-xs'
+        : 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-purple-700 border border-purple-200 hover:bg-purple-50 shrink-0';
+
+    const btnVchAll = document.getElementById('filter-vch-all-btn');
+    const btnVchActive = document.getElementById('filter-vch-active-btn');
+    const btnVchRedeemed = document.getElementById('filter-vch-redeemed-btn');
+    const activeVchFilter = state.loyaltyVoucherFilter || 'all';
+
+    if (btnVchAll) btnVchAll.className = activeVchFilter === 'all'
+        ? 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-slate-900 text-white shrink-0'
+        : 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 shrink-0';
+
+    if (btnVchActive) btnVchActive.className = activeVchFilter === 'active'
+        ? 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-emerald-700 text-white shrink-0 shadow-xs'
+        : 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 shrink-0';
+
+    if (btnVchRedeemed) btnVchRedeemed.className = activeVchFilter === 'redeemed'
+        ? 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-purple-700 text-white shrink-0 shadow-xs'
+        : 'px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-purple-700 border border-purple-200 hover:bg-purple-50 shrink-0';
+
+    // Filter customers
+    let displayedCustomers = allCustomers;
+    if (activeCustFilter === 'eligible') {
+        displayedCustomers = allCustomers.filter(c => c.isEligible);
+    } else if (activeCustFilter === 'active') {
+        displayedCustomers = allCustomers.filter(c => (c.activeVouchers || []).length > 0);
+    } else if (activeCustFilter === 'claimed') {
+        displayedCustomers = allCustomers.filter(c => (c.redeemedVouchers || []).length > 0);
+    }
+
     const custTbody = document.getElementById('loyalty-customers-table-body');
     if (custTbody) {
-        if (allCustomers.length === 0) {
+        if (displayedCustomers.length === 0) {
+            let emptyMsg = 'Belum ada data pelanggan cuci kendaraan.';
+            let emptySub = 'Transaksi layanan cuci yang dicatat di kasir akan otomatis masuk ke program loyalitas.';
+            if (activeCustFilter === 'eligible') {
+                emptyMsg = 'Tidak ada pelanggan yang saat ini siap klaim cuci gratis (≥7x).';
+                emptySub = 'Pelanggan yang sudah mengumpulkan 7 stamp cuci akan otomatis tampil di sini.';
+            } else if (activeCustFilter === 'active') {
+                emptyMsg = 'Tidak ada kendaraan yang memiliki kupon aktif saat ini.';
+                emptySub = 'Kendaraan yang memiliki kupon voucher cuci aktif (belum ditukarkan) akan tampil di sini.';
+            } else if (activeCustFilter === 'claimed') {
+                emptyMsg = 'Tidak ada kendaraan yang berstatus sudah klaim cuci.';
+                emptySub = 'Semua kendaraan yang sudah klaim cuci gratis telah dibersihkan atau belum ada penukaran voucher.';
+            }
             custTbody.innerHTML = `
                 <tr>
                     <td colspan="6" class="px-3 py-8 text-center text-slate-400">
-                        <div class="text-2xl mb-1">🚿</div>
-                        <p class="font-bold text-slate-700">Belum ada data pelanggan cuci kendaraan.</p>
-                        <p class="text-[11px] text-slate-400">Transaksi layanan cuci yang dicatat di kasir akan otomatis masuk ke program loyalitas.</p>
+                        <div class="text-2xl mb-1">${activeCustFilter === 'claimed' ? '🎁' : (activeCustFilter === 'active' ? '🎟️' : '🚿')}</div>
+                        <p class="font-bold text-slate-700">${emptyMsg}</p>
+                        <p class="text-[11px] text-slate-400">${emptySub}</p>
                     </td>
                 </tr>
             `;
         } else {
-            custTbody.innerHTML = allCustomers.map((cust) => {
+            custTbody.innerHTML = displayedCustomers.map((cust) => {
                 const isEligible = cust.isEligible;
                 const activeVch = (cust.activeVouchers || [])[0];
+                const hasRedeemed = (cust.redeemedVouchers || []).length > 0;
 
                 const stampsVisual = [1, 2, 3, 4, 5, 6, 7].map(num => {
                     const isDone = num <= cust.stampsInCycle;
@@ -4424,8 +4778,22 @@ function renderLoyaltyWashManagerModal() {
                         </td>
                         <td class="px-3 py-2.5 text-center">
                             <div class="text-xs tracking-wider">${stampsVisual}</div>
-                            <div class="text-[10px] ${isEligible ? 'text-amber-700 font-black' : 'text-slate-500'} mt-0.5">
-                                ${isEligible ? '🎉 Berhak Cuci Gratis' : `${cust.stampsInCycle}/7 Stamp`}
+                            <div class="text-[10px] mt-0.5">
+                                ${activeVch ? `
+                                    <span class="inline-block px-2 py-0.5 rounded-full font-black bg-cyan-100 text-cyan-800 border border-cyan-200">
+                                        🎟️ Kupon Aktif (#${activeVch.code})
+                                    </span>
+                                ` : (hasRedeemed ? `
+                                    <span class="inline-block px-2 py-0.5 rounded-full font-black bg-purple-100 text-purple-800 border border-purple-200">
+                                        🎁 Sudah Klaim (${cust.redeemedVouchers.length}x)
+                                    </span>
+                                ` : (isEligible ? `
+                                    <span class="inline-block px-2 py-0.5 rounded-full font-black bg-amber-100 text-amber-800 border border-amber-200">
+                                        🎉 Siap Klaim Gratis
+                                    </span>
+                                ` : `
+                                    <span class="text-slate-500 font-medium">${cust.stampsInCycle}/7 Stamp</span>
+                                `))}
                             </div>
                         </td>
                         <td class="px-3 py-2.5 text-right">
@@ -4436,6 +4804,12 @@ function renderLoyaltyWashManagerModal() {
                                         title="Buka Struk Voucher Aktif">
                                         <span>🎟️</span>
                                         <span>Lihat Struk</span>
+                                    </button>
+                                    <button onclick="deleteActiveVoucherCustomer('${cust.plateNumber !== '-' ? cust.plateNumber : cust.customerPhone}')"
+                                        class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                                        title="Hapus kendaraan ini dan batalkan kupon aktifnya">
+                                        <span>🗑️</span>
+                                        <span>Hapus</span>
                                     </button>
                                 ` : (isEligible ? `
                                     <button onclick="issueFreeWashVoucherForCustomer('${cust.plateNumber !== '-' ? cust.plateNumber : cust.customerPhone}')"
@@ -4451,6 +4825,15 @@ function renderLoyaltyWashManagerModal() {
                                         + Hadiahkan
                                     </button>
                                 `)}
+
+                                ${hasRedeemed ? `
+                                    <button onclick="deleteClaimedCustomerVouchers('${cust.plateNumber !== '-' ? cust.plateNumber : cust.customerPhone}')"
+                                        class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                                        title="Hapus riwayat kendaraan yang sudah klaim cuci gratis ini">
+                                        <span>🗑️</span>
+                                        <span>Hapus Klaim</span>
+                                    </button>
+                                ` : ''}
                             </div>
                         </td>
                     </tr>
@@ -4459,20 +4842,34 @@ function renderLoyaltyWashManagerModal() {
         }
     }
 
+    // Filter vouchers
+    let displayedVouchers = allVouchers;
+    if (activeVchFilter === 'active') {
+        displayedVouchers = allVouchers.filter(v => v.status === 'active');
+    } else if (activeVchFilter === 'redeemed') {
+        displayedVouchers = allVouchers.filter(v => v.status === 'redeemed');
+    }
+
     const vchTbody = document.getElementById('loyalty-vouchers-table-body');
     if (vchTbody) {
-        if (allVouchers.length === 0) {
+        if (displayedVouchers.length === 0) {
+            let emptyMsg = 'Belum ada struk kupon voucher cuci gratis.';
+            if (activeVchFilter === 'active') {
+                emptyMsg = 'Tidak ada voucher cuci gratis yang berstatus aktif.';
+            } else if (activeVchFilter === 'redeemed') {
+                emptyMsg = 'Tidak ada struk voucher yang berstatus sudah ditukarkan / diklaim.';
+            }
             vchTbody.innerHTML = `
                 <tr>
                     <td colspan="6" class="px-3 py-8 text-center text-slate-400">
                         <div class="text-2xl mb-1">🎟️</div>
-                        <p class="font-bold text-slate-700">Belum ada struk kupon voucher cuci gratis yang diterbitkan.</p>
+                        <p class="font-bold text-slate-700">${emptyMsg}</p>
                         <p class="text-[11px] text-slate-400">Voucher yang diterbitkan otomatis atau manual akan tersimpan di sini.</p>
                     </td>
                 </tr>
             `;
         } else {
-            vchTbody.innerHTML = allVouchers.map(v => {
+            vchTbody.innerHTML = displayedVouchers.map(v => {
                 const isRedeemed = v.status === 'redeemed';
                 const isExpired = !isRedeemed && new Date(v.expiresAt) < new Date();
 
@@ -4493,7 +4890,7 @@ function renderLoyaltyWashManagerModal() {
                         </td>
                         <td class="px-3 py-2.5 text-center">
                             ${isRedeemed ? `
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-200 text-slate-700 border border-slate-300">
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-300">
                                     🎁 Sudah Ditukar
                                 </span>
                             ` : (isExpired ? `
@@ -4507,7 +4904,7 @@ function renderLoyaltyWashManagerModal() {
                             `)}
                         </td>
                         <td class="px-3 py-2.5 text-right">
-                            <div class="flex items-center justify-end gap-1 flex-wrap">
+                            <div class="flex items-center justify-end gap-1.5 flex-wrap">
                                 <button onclick="openFreeWashReceiptModal('${v.id}')"
                                     class="px-2.5 py-1 bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold rounded-lg shadow-xs transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
                                     title="Buka Struk Bukti Penukaran">
@@ -4522,6 +4919,11 @@ function renderLoyaltyWashManagerModal() {
                                         <span>Klaim</span>
                                     </button>
                                 ` : ''}
+                                <button onclick="deleteVoucherById('${v.id}')"
+                                    class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-lg transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                                    title="Hapus struk kupon ini">
+                                    <span>🗑️</span>
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -4545,11 +4947,11 @@ function checkLoyaltyCustomerDirect() {
     const history = getCustomerWashHistory(query);
     resultBox.classList.remove('hidden');
 
-    if (history.washCount === 0) {
+    if (history.washCount === 0 && (history.vouchers || []).length === 0) {
         resultBox.innerHTML = `
             <div class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs flex items-start justify-between gap-2">
                 <div>
-                    <span class="font-bold text-amber-900">Belum ada riwayat cuci untuk: "${query}"</span>
+                    <span class="font-bold text-amber-900">Belum ada riwayat cuci aktif untuk: "${query}"</span>
                     <p class="text-[11px] text-amber-700 mt-0.5">Pastikan plat nomor atau nomor WhatsApp sudah benar dan pernah bertransaksi layanan cuci di kasir.</p>
                 </div>
                 <button type="button" onclick="openManualCreateVoucherModal('${query}')"
@@ -4563,28 +4965,40 @@ function checkLoyaltyCustomerDirect() {
 
     const isEligible = history.isEligibleForFreeWash || (history.washCount >= 7);
     const activeVch = (history.activeVouchers || [])[0];
+    const hasRedeemed = (history.redeemedVouchers || []).length > 0;
 
     resultBox.innerHTML = `
         <div class="p-3.5 bg-cyan-50 border border-cyan-200 rounded-xl flex flex-col gap-2.5 text-xs">
             <div class="flex items-center justify-between flex-wrap gap-2">
                 <div>
-                    <div class="font-black text-sm text-cyan-950 flex items-center gap-2">
+                    <div class="font-black text-sm text-cyan-950 flex items-center gap-2 flex-wrap">
                         <span class="font-mono bg-white px-2 py-0.5 rounded border border-cyan-300">${history.plateNumber || query}</span>
                         <span>${history.customerName || 'Pelanggan Cuci'}</span>
                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white border border-cyan-200 text-cyan-800">
                             ${history.vehicleType === 'mobil' ? '🚗 Mobil' : '🛵 Motor'}
                         </span>
+                        ${hasRedeemed ? `
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                                🎁 Sudah Klaim (${history.redeemedVouchers.length}x)
+                            </span>
+                        ` : ''}
                     </div>
                     <div class="text-[11px] text-cyan-700 mt-1">
                         Total Kunjungan Cuci: <strong class="text-cyan-950 text-sm font-mono">${history.washCount}x</strong> • Stamp Siklus: <strong class="text-cyan-950 text-sm font-mono">${history.stampsInCycle}/7</strong>
                     </div>
                 </div>
 
-                <div class="flex items-center gap-1.5">
+                <div class="flex items-center gap-1.5 flex-wrap">
                     ${activeVch ? `
                         <button type="button" onclick="openFreeWashReceiptModal('${activeVch.id}')"
                             class="px-3 py-1.5 bg-cyan-700 hover:bg-cyan-800 text-white font-black text-xs rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer">
                             🎟️ Lihat Struk Voucher Aktif
+                        </button>
+                        <button type="button" onclick="deleteActiveVoucherCustomer('${history.plateNumber || query}')"
+                            class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                            title="Hapus kendaraan ini dan batalkan kupon aktif">
+                            <span>🗑️</span>
+                            <span>Hapus Kendaraan</span>
                         </button>
                     ` : (isEligible ? `
                         <button type="button" onclick="issueFreeWashVoucherForCustomer('${history.plateNumber || query}')"
@@ -4597,6 +5011,15 @@ function checkLoyaltyCustomerDirect() {
                             + Beri Voucher Spesial
                         </button>
                     `)}
+
+                    ${hasRedeemed ? `
+                        <button type="button" onclick="deleteClaimedCustomerVouchers('${history.plateNumber || query}')"
+                            class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                            title="Hapus riwayat klaim cuci kendaraan ini">
+                            <span>🗑️</span>
+                            <span>Hapus Klaim</span>
+                        </button>
+                    ` : ''}
                 </div>
             </div>
         </div>
@@ -4630,6 +5053,7 @@ window.hasWashService = hasWashService;
 window.normalizePlate = normalizePlate;
 window.normalizePhone = normalizePhone;
 window.saveFreeWashVouchers = saveFreeWashVouchers;
+window.saveLoyaltyClearedVehicles = saveLoyaltyClearedVehicles;
 window.getCustomerWashHistory = getCustomerWashHistory;
 window.getAllWashCustomers = getAllWashCustomers;
 window.generateFreeWashVoucher = generateFreeWashVoucher;
@@ -4646,6 +5070,14 @@ window.switchLoyaltySubTab = switchLoyaltySubTab;
 window.renderLoyaltyWashManagerModal = renderLoyaltyWashManagerModal;
 window.checkLoyaltyCustomerDirect = checkLoyaltyCustomerDirect;
 window.openManualCreateVoucherModal = openManualCreateVoucherModal;
+window.setLoyaltyCustomerFilter = setLoyaltyCustomerFilter;
+window.setLoyaltyVoucherFilter = setLoyaltyVoucherFilter;
+window.deleteActiveVoucherCustomer = deleteActiveVoucherCustomer;
+window.deleteAllActiveVoucherVehicles = deleteAllActiveVoucherVehicles;
+window.deleteClaimedCustomerVouchers = deleteClaimedCustomerVouchers;
+window.deleteAllClaimedWashVehicles = deleteAllClaimedWashVehicles;
+window.deleteAllClaimedWashVouchers = deleteAllClaimedWashVouchers;
+window.deleteVoucherById = deleteVoucherById;
 
 // --- KOMPONEN KARTU HASIL LAYANAN DETAIL YANG SUDAH DIBAYAR ---
 function generatePaidServicesCardHTML(tx) {
@@ -6294,6 +6726,12 @@ window.deleteTransaction = function(txId) {
 function closeModal() {
     document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.add('hidden'));
     state.activeModal = null;
+    const p1 = document.getElementById('print-free-wash-section');
+    const p2 = document.getElementById('print-receipt-section');
+    const p3 = document.getElementById('print-daily-summary-section');
+    if (p1) p1.innerHTML = '';
+    if (p2) p2.innerHTML = '';
+    if (p3) p3.innerHTML = '';
 }
 
 // --- TOAST NOTIFICATIONS ---
