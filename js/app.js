@@ -191,23 +191,38 @@ function loadData() {
     }
 }
 
+// Saluran sinkronisasi antar-tab lokal (BroadcastChannel)
+const syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('jaars_bengkel_sync') : null;
+
 function saveProfile() {
     localStorage.setItem('bengkel_profile', JSON.stringify(state.profile));
+    if (syncChannel) {
+        try {
+            syncChannel.postMessage({ type: 'PROFILE_UPDATED', profile: state.profile, timestamp: Date.now() });
+        } catch (e) {}
+    }
     triggerAutoSyncToCloud('Profil Bengkel');
 }
 
 function saveServices() {
     localStorage.setItem('bengkel_services', JSON.stringify(state.services));
+    if (syncChannel) {
+        try {
+            syncChannel.postMessage({ type: 'SERVICES_UPDATED', timestamp: Date.now() });
+        } catch (e) {}
+    }
     triggerAutoSyncToCloud('Tarif Layanan');
 }
 
 function saveCatalog() {
     localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
+    if (syncChannel) {
+        try {
+            syncChannel.postMessage({ type: 'CATALOG_UPDATED', timestamp: Date.now() });
+        } catch (e) {}
+    }
     triggerAutoSyncToCloud('Katalog Ban & Oli');
 }
-
-// Saluran sinkronisasi antar-tab lokal (BroadcastChannel)
-const syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('jaars_bengkel_sync') : null;
 
 function saveTransactions(options = {}) {
     const delSet = new Set(state.deletedTransactionIds || []);
@@ -544,6 +559,10 @@ async function syncFromCloud(silent = false) {
             if (typeof renderHistory === 'function') renderHistory();
             if (typeof updateAdminUI === 'function') updateAdminUI();
             if (typeof updateLoyaltyBadgesAndCounts === 'function') updateLoyaltyBadgesAndCounts();
+            if (typeof renderShopStatus === 'function') renderShopStatus();
+            if (typeof renderWorkshopHeader === 'function') renderWorkshopHeader();
+            if (typeof renderInfoPanel === 'function') renderInfoPanel();
+            if (typeof renderProfileForm === 'function') renderProfileForm();
         }
 
         updateCloudSyncIndicator('synced', `Cloud Aktif (${source})`);
@@ -687,8 +706,20 @@ function initCloudSync() {
         syncChannel.onmessage = (event) => {
             if (!event || !event.data) return;
             const msg = event.data;
-            if (msg.type === 'TRANSACTIONS_UPDATED' || msg.type === 'TRANSACTION_DELETED' || msg.type === 'VOUCHERS_UPDATED' || msg.type === 'LOYALTY_CLEARED_UPDATED' || msg.type === 'SYNC_EVENT') {
+            if (msg.type === 'TRANSACTIONS_UPDATED' || msg.type === 'TRANSACTION_DELETED' || msg.type === 'VOUCHERS_UPDATED' || msg.type === 'LOYALTY_CLEARED_UPDATED' || msg.type === 'PROFILE_UPDATED' || msg.type === 'SERVICES_UPDATED' || msg.type === 'CATALOG_UPDATED' || msg.type === 'SYNC_EVENT') {
                 try {
+                    const savedProfile = localStorage.getItem('bengkel_profile');
+                    if (savedProfile) {
+                        state.profile = { ...DEFAULT_PROFILE, ...JSON.parse(savedProfile) };
+                    }
+                    const savedServices = localStorage.getItem('bengkel_services');
+                    if (savedServices) {
+                        state.services = JSON.parse(savedServices);
+                    }
+                    const savedCatalog = localStorage.getItem('bengkel_catalog');
+                    if (savedCatalog) {
+                        state.catalog = JSON.parse(savedCatalog);
+                    }
                     const savedDeleted = localStorage.getItem('bengkel_deleted_tx_ids');
                     if (savedDeleted) {
                         state.deletedTransactionIds = JSON.parse(savedDeleted);
@@ -709,6 +740,10 @@ function initCloudSync() {
                     if (typeof renderHistory === 'function') renderHistory();
                     if (typeof updateAdminUI === 'function') updateAdminUI();
                     if (typeof updateLoyaltyBadgesAndCounts === 'function') updateLoyaltyBadgesAndCounts();
+                    if (typeof renderShopStatus === 'function') renderShopStatus();
+                    if (typeof renderWorkshopHeader === 'function') renderWorkshopHeader();
+                    if (typeof renderInfoPanel === 'function') renderInfoPanel();
+                    if (typeof renderProfileForm === 'function') renderProfileForm();
                 } catch (e) {
                     console.error('[BroadcastChannel Sync Error]:', e);
                 }
@@ -1506,7 +1541,8 @@ function getOperatingStatus(operatingHoursStr) {
     const profile = state.profile || DEFAULT_PROFILE;
     
     // Jika tombol Tutup Bengkel diaktifkan oleh admin
-    if (profile && profile.isStoreClosed) {
+    const isClosed = Boolean(profile && (profile.isStoreClosed === true || profile.isStoreClosed === 'true'));
+    if (isClosed) {
         const reason = (profile.closedReason || 'Tutup Sementara').trim();
         return {
             isOpen: false,
@@ -1552,8 +1588,9 @@ function getOperatingStatus(operatingHoursStr) {
 // --- FUNGSI STATUS OPERASIONAL & TUTUP/BUKA BENGKEL ---
 function renderShopStatus() {
     const profile = state.profile || DEFAULT_PROFILE;
-    const isClosed = Boolean(profile.isStoreClosed);
+    const isClosed = Boolean(profile && (profile.isStoreClosed === true || profile.isStoreClosed === 'true'));
     const closedReason = (profile.closedReason || 'Tutup Sementara').trim();
+    const opStatus = getOperatingStatus(profile.operatingHours);
 
     // 1. Status Bar Subheader
     const headerStatus = document.getElementById('header-open-status');
@@ -1566,7 +1603,6 @@ function renderShopStatus() {
             headerStatus.textContent = `🔴 BENGKEL SEDANG TUTUP ${closedReason ? `(${closedReason})` : ''}`;
             if (userClosedPill) userClosedPill.classList.remove('hidden');
         } else {
-            const opStatus = getOperatingStatus(profile.operatingHours);
             headerDot.className = opStatus.isOpen ? 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse' : 'w-2 h-2 rounded-full bg-rose-500';
             headerStatus.className = opStatus.isOpen ? 'font-semibold text-emerald-400' : 'font-semibold text-rose-400';
             headerStatus.textContent = opStatus.isOpen ? 'Buka Sekarang' : 'Sedang Tutup';
@@ -1658,6 +1694,38 @@ function renderShopStatus() {
             infoClosedAlert.classList.add('hidden');
         }
     }
+
+    // Update Hero status badge in Panel Info
+    const heroStatusBadge = document.getElementById('info-status-badge');
+    const heroStatusDesc = document.getElementById('info-status-desc');
+    if (heroStatusBadge) {
+        if (isClosed) {
+            heroStatusBadge.className = 'inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-400/30';
+            heroStatusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-400 animate-pulse"></span> SEDANG TUTUP';
+        } else if (opStatus.isOpen) {
+            heroStatusBadge.className = 'inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30';
+            heroStatusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> BUKA SEKARANG';
+        } else {
+            heroStatusBadge.className = 'inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-400/30';
+            heroStatusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-400"></span> SEDANG TUTUP';
+        }
+    }
+    if (heroStatusDesc) {
+        heroStatusDesc.innerHTML = `<span>⏱️</span> <span>${opStatus.statusDesc}</span>`;
+    }
+
+    const infoOpenStatusBadge = document.getElementById('info-open-status-badge');
+    if (infoOpenStatusBadge) {
+        if (isClosed) {
+            infoOpenStatusBadge.textContent = 'Tutup Sementara';
+            infoOpenStatusBadge.className = 'text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded-full';
+        } else {
+            infoOpenStatusBadge.textContent = opStatus.isOpen ? 'Buka Hari Ini' : 'Tutup Hari Ini';
+            infoOpenStatusBadge.className = opStatus.isOpen 
+                ? 'text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full'
+                : 'text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded-full';
+        }
+    }
 }
 
 function toggleShopStatus(source = 'nav') {
@@ -1666,33 +1734,50 @@ function toggleShopStatus(source = 'nav') {
         return;
     }
 
-    const currentClosed = Boolean(state.profile.isStoreClosed);
+    const currentClosed = Boolean(state.profile && (state.profile.isStoreClosed === true || state.profile.isStoreClosed === 'true'));
 
     if (!currentClosed) {
         // Mau MENUTUP bengkel
-        const inputReason = prompt(
-            'TUTUP OPERASIONAL BENGKEL:\n\n' +
-            'Status tutup akan langsung ditampilkan ke seluruh pengguna/pelanggan di website.\n\n' +
-            'Masukkan keterangan/alasan tutup (opsional):',
-            state.profile.closedReason || 'Tutup Sementara'
-        );
-        if (inputReason === null) return; // Dibatalkan
+        let reason = '';
+        const settingsClosedReasonInput = document.getElementById('settings-closed-reason');
+        if (settingsClosedReasonInput && settingsClosedReasonInput.value.trim()) {
+            reason = settingsClosedReasonInput.value.trim();
+        } else if (state.profile && state.profile.closedReason && state.profile.closedReason.trim()) {
+            reason = state.profile.closedReason.trim();
+        } else {
+            reason = 'Tutup Sementara';
+        }
 
+        state.profile = state.profile || { ...DEFAULT_PROFILE };
         state.profile.isStoreClosed = true;
-        state.profile.closedReason = inputReason.trim() || 'Tutup Sementara';
+        state.profile.closedReason = reason;
+
+        if (settingsClosedReasonInput) {
+            settingsClosedReasonInput.value = reason;
+        }
+
         saveProfile();
         renderShopStatus();
         renderInfoPanel();
-        showToast('🔴 Bengkel berhasil DITUTUP. Status tutup kini tampil di sistem pengguna.');
+        renderWorkshopHeader();
+
+        // Segera sinkronkan ke cloud secara instan tanpa menunggu jeda debounce
+        syncToCloud('Tutup Bengkel');
+
+        showToast(`🔴 Bengkel berhasil DITUTUP (${reason}). Status tutup aktif di semua perangkat.`);
     } else {
         // Mau MEMBUKA KEMBALI bengkel
-        if (!confirm('Buka kembali operasional bengkel untuk melayani pelanggan seperti biasa?')) {
-            return;
-        }
+        state.profile = state.profile || { ...DEFAULT_PROFILE };
         state.profile.isStoreClosed = false;
+
         saveProfile();
         renderShopStatus();
         renderInfoPanel();
+        renderWorkshopHeader();
+
+        // Segera sinkronkan ke cloud secara instan tanpa menunggu jeda debounce
+        syncToCloud('Buka Bengkel');
+
         showToast('🟢 Bengkel berhasil DIBUKA kembali untuk pelanggan!');
     }
 }
@@ -1711,54 +1796,23 @@ function renderInfoPanel() {
     // Populate Hero elements
     const heroName = document.getElementById('info-bengkel-name');
     const heroTagline = document.getElementById('info-bengkel-tagline');
-    const heroStatusBadge = document.getElementById('info-status-badge');
-    const heroStatusDesc = document.getElementById('info-status-desc');
     const heroWaBtn = document.getElementById('hero-wa-btn');
 
     if (heroName) heroName.textContent = name;
     if (heroTagline) heroTagline.textContent = tagline;
-
-    // Real-time Operating Status
-    const status = getOperatingStatus(hours);
-    if (heroStatusBadge) {
-        if (status.isOpen) {
-            heroStatusBadge.className = 'inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30';
-            heroStatusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> BUKA SEKARANG';
-        } else {
-            heroStatusBadge.className = 'inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-400/30';
-            heroStatusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-400"></span> SEDANG TUTUP';
-        }
-    }
-    if (heroStatusDesc) {
-        heroStatusDesc.innerHTML = `<span>⏱️</span> <span>${status.statusDesc}</span>`;
-    }
-
-    // Subheader status badge
-    const subheaderStatus = document.getElementById('header-open-status');
-    if (subheaderStatus) {
-        subheaderStatus.textContent = status.isOpen ? 'Buka Sekarang' : 'Sedang Tutup';
-        subheaderStatus.className = status.isOpen ? 'font-semibold text-emerald-400' : 'font-semibold text-rose-400';
-    }
 
     // Populate 4 Info Cards
     const infoPhone = document.getElementById('info-bengkel-phone');
     const infoAddress = document.getElementById('info-bengkel-address');
     const infoEmail = document.getElementById('info-bengkel-email');
     const infoHours = document.getElementById('info-bengkel-hours');
-    const infoOpenStatusBadge = document.getElementById('info-open-status-badge');
 
     if (infoPhone) infoPhone.textContent = phone;
     if (infoAddress) infoAddress.textContent = address;
     if (infoEmail) infoEmail.textContent = email;
     if (infoHours) infoHours.textContent = hours;
-    if (infoOpenStatusBadge) {
-        infoOpenStatusBadge.textContent = status.isOpen ? 'Buka Hari Ini' : 'Tutup Hari Ini';
-        infoOpenStatusBadge.className = status.isOpen 
-            ? 'text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full'
-            : 'text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded-full';
-    }
 
-    // Sync all shop status elements
+    // Sync all shop status elements (Header, Banner, Badges, Alert Box)
     renderShopStatus();
 
     // Action Links
