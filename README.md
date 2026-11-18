@@ -126,14 +126,17 @@ Aplikasi ini dapat langsung dijalankan di browser tanpa perlu server, serta **10
       - Tombol hapus satuan `🗑️` pada semua voucher (aktif maupun sudah ditukar) serta tombol massal `🗑️ Hapus Semua Struk yg Sudah Diklaim`.
     - **4 Kartu Statistik Cepat:** Total Pelanggan Cuci, Siap Klaim (≥7x), Kupon Aktif Diterbitkan, dan Sudah Klaim Cuci (interaktif dengan 1-klik filter).
 
-12. **🌐 Sinkronisasi Cloud Antar-Perangkat Otomatis (Vercel & Multi-Device Auto-Sync):**
-   - **Otomatis Berubah di Semua Perangkat:** Saat Admin mengubah tarif layanan, menambah produk katalog (seperti ban IRC SS 570F), atau mengedit profil bengkel di laptop, sistem secara otomatis mengirimkan konfigurasi ke Cloud Vercel (`/api/sync`) atau database cloud.
-   - **Tampilan Khusus Admin:** Tombol & status Cloud Sync hanya ditampilkan untuk admin saat login (disembunyikan dari sistem pengguna umum agar tampilan pelanggan tetap bersih dan profesional).
-   - **Perangkat Lain Tidak Perlu Mengulang Konfigurasi:** Saat HP kasir, tablet, atau laptop lain membuka aplikasi di Vercel, sistem otomatis menarik data terbaru di latar belakang (*background sync*) dan memperbarui penyimpanan lokal browser.
-   - **📲 Bagikan Link via WhatsApp (1-Klik):** Admin dapat menyalin atau mengirimkan tautan sinkronisasi instan via WhatsApp ke HP kasir. Kasir cukup mengklik tautan tersebut sekali saja di HP mereka untuk langsung menerapkan seluruh tarif, produk katalog, dan profil tanpa perlu login admin.
-   - **📷 Scan QR Code Sinkronisasi:** Kasir cukup mengarahkan kamera HP ke layar laptop admin untuk scan QR code sinkronisasi instan.
-   - **📥 Unduh Master default-data.js:** Admin dapat mengunduh berkas `default-data.js` yang sudah diperbarui dengan data riil bengkel saat ini. Cukup timpa berkas ini di repositori dan push ke GitHub agar Vercel secara permanen menjadikan data tersebut sebagai bawaan resmi untuk semua pengunjung.
-   - **Dukungan Vercel KV & Firebase:** Mendukung Vercel KV / Upstash Redis bawaan dashboard Vercel, maupun Firebase Realtime Database gratis.
+12. **🌐 Sinkronisasi Cloud Antar-Perangkat Otomatis (Multi-Device Real-Time Booking & Payment Sync):**
+    - **Sinkronisasi Real-Time Booking & Nota Transaksi:** Saat pelanggan/pengguna menyelesaikan booking pelayanan atau melakukan pembayaran (QRIS / Transfer Bank) dari HP atau perangkat mereka, nota transaksi seketika diunggah ke Cloud Vercel (`/api/sync`).
+    - **Terhubung Langsung ke Sistem Admin di Semua Device:** Sistem admin di komputer kasir, tablet, atau HP pengelola langsung menerima nota booking dan rincian pembayaran tersebut secara *real-time* (polling cepat 8 detik serta instan saat tab dibuka/aktif kembali).
+    - **Notifikasi Nota Baru Masuk:** Saat ada pemesanan baru masuk dari perangkat lain, sistem admin otomatis menampilkan notifikasi toast dinamis: `🔔 Ada 1 nota/booking baru masuk dari perangkat lain! (#INV-XXXXXX)`.
+    - **Validasi Pembayaran Antar-Perangkat:** Admin dapat memvalidasi pembayaran QRIS atau Transfer di menu *Ringkasan Pembayaran* pada salah satu perangkat, dan status *LUNAS (Terverifikasi)* tersebut langsung tersinkronisasi ke seluruh perangkat lainnya.
+    - **Penggabungan Data Cerdas (Multi-Device Merge):** Algoritma penggabungan cerdas (`mergeTransactions`) berbasis nomor invoice unik memastikan pesanan dan transaksi dari berbagai perangkat berbeda tidak akan saling menimpa atau hilang.
+    - **Saluran Komunikasi Antar-Tab Lokal (BroadcastChannel):** Perubahan transaksi, kupon loyalitas, dan validasi pembayaran pada satu tab seketika ter-update di tab atau jendela lain pada perangkat yang sama tanpa jeda (<50ms).
+    - **Sinkronisasi Master Tarif, Katalog & Loyalitas:** Tarif layanan, katalog produk ban & oli, kupon loyalitas cuci 7x, serta identitas bengkel tetap tersinkronisasi penuh antar-perangkat.
+    - **📲 Bagikan Link via WhatsApp (1-Klik) & Scan QR Code:** Admin dapat membagikan tautan konfigurasi instan atau menampilkan QR Code untuk menyinkronkan seluruh master data ke perangkat kasir baru.
+    - **📥 Unduh Master default-data.js:** Admin dapat mengunduh berkas `default-data.js` terbaru untuk dijadikan data bawaan permanen di repositori GitHub/Vercel.
+    - **Dukungan Vercel KV, Upstash Redis & Firebase:** Kompatibel penuh dengan penyimpanan serverless Vercel KV, Upstash Redis, serta Firebase Realtime Database.
 
 ---
 

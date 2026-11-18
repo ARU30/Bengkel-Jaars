@@ -1,8 +1,102 @@
 // api/sync.js
 // Vercel Serverless Function: Sinkronisasi Otomatis Antar-Perangkat (Multi-Device Cloud Sync)
+// Mendukung sinkronisasi realtime nota booking, pembayaran QRIS/Transfer/Tunai, tarif, katalog, dan loyalitas
 // Endpoint: GET /api/sync & POST /api/sync
 
 let memoryStore = null;
+
+// Helper: Gabungkan daftar transaksi dari beberapa perangkat tanpa saling menimpa
+function mergeTransactions(existingList, incomingList, deletedIds = []) {
+    const map = new Map();
+    const deletedSet = new Set(deletedIds || []);
+
+    (existingList || []).forEach(tx => {
+        if (!tx) return;
+        const key = tx.invoiceNo || tx.id;
+        if (key && !deletedSet.has(tx.id) && !deletedSet.has(tx.invoiceNo)) {
+            map.set(key, tx);
+        }
+    });
+
+    (incomingList || []).forEach(tx => {
+        if (!tx) return;
+        const key = tx.invoiceNo || tx.id;
+        if (!key || deletedSet.has(tx.id) || deletedSet.has(tx.invoiceNo)) return;
+
+        const existing = map.get(key);
+        if (!existing) {
+            map.set(key, tx);
+        } else {
+            // Gabungkan status pembayaran (jika salah satu sudah tervalidasi, jadikan terverifikasi)
+            const isVerified = existing.paymentValidated === true || 
+                               existing.paymentStatus === 'verified' || 
+                               tx.paymentValidated === true || 
+                               tx.paymentStatus === 'verified';
+            map.set(key, {
+                ...existing,
+                ...tx,
+                paymentValidated: isVerified,
+                paymentStatus: isVerified ? 'verified' : (tx.paymentStatus || existing.paymentStatus || 'pending'),
+                validatedAt: tx.validatedAt || existing.validatedAt || null,
+                validatedBy: tx.validatedBy || existing.validatedBy || null
+            });
+        }
+    });
+
+    return Array.from(map.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+}
+
+// Helper: Gabungkan kupon voucher cuci gratis
+function mergeVouchers(existingList, incomingList, deletedIds = []) {
+    const map = new Map();
+    const deletedSet = new Set(deletedIds || []);
+
+    (existingList || []).forEach(v => {
+        if (!v) return;
+        const key = v.id || v.code;
+        if (key && !deletedSet.has(v.id) && !deletedSet.has(v.code)) {
+            map.set(key, v);
+        }
+    });
+
+    (incomingList || []).forEach(v => {
+        if (!v) return;
+        const key = v.id || v.code;
+        if (!key || deletedSet.has(v.id) || deletedSet.has(v.code)) return;
+
+        const existing = map.get(key);
+        if (!existing) {
+            map.set(key, v);
+        } else {
+            const isRedeemed = existing.status === 'redeemed' || v.status === 'redeemed';
+            map.set(key, {
+                ...existing,
+                ...v,
+                status: isRedeemed ? 'redeemed' : (v.status || existing.status),
+                redeemedAt: v.redeemedAt || existing.redeemedAt || null,
+                redeemedInvoiceNo: v.redeemedInvoiceNo || existing.redeemedInvoiceNo || null
+            });
+        }
+    });
+
+    return Array.from(map.values()).sort((a, b) => new Date(b.issuedAt || 0) - new Date(a.issuedAt || 0));
+}
+
+// Helper: Gabungkan riwayat kendaraan loyalitas yang dibersihkan/reset
+function mergeClearedVehicles(existingList, incomingList) {
+    const map = new Map();
+    (existingList || []).forEach(item => {
+        if (!item) return;
+        const key = (item.plate || '').trim().toUpperCase() + '_' + (item.phone || '').trim();
+        if (key !== '_') map.set(key, item);
+    });
+    (incomingList || []).forEach(item => {
+        if (!item) return;
+        const key = (item.plate || '').trim().toUpperCase() + '_' + (item.phone || '').trim();
+        if (key !== '_') map.set(key, { ...(map.get(key) || {}), ...item });
+    });
+    return Array.from(map.values());
+}
 
 module.exports = async function handler(req, res) {
     // 1. CORS headers agar dapat diakses dari browser mana pun & domain vercel
@@ -101,7 +195,7 @@ module.exports = async function handler(req, res) {
         return savedIn;
     }
 
-    // --- METODE GET: Mengambil konfigurasi terbaru untuk semua perangkat ---
+    // --- METODE GET: Mengambil konfigurasi & transaksi terbaru untuk semua perangkat ---
     if (req.method === 'GET') {
         try {
             const data = await getData();
@@ -109,7 +203,7 @@ module.exports = async function handler(req, res) {
                 return res.status(200).json({
                     success: true,
                     synced: false,
-                    message: 'Belum ada data konfigurasi di Cloud. Silakan simpan pengaturan dari menu Admin.',
+                    message: 'Belum ada data di Cloud. Data akan otomatis disinkronkan saat transaksi atau pengaturan disimpan.',
                     storage: KV_URL ? 'Vercel KV (Kosong)' : (CLOUD_URL ? 'Cloud DB (Kosong)' : 'Belum Terhubung Database Cloud'),
                     kvConfigured: Boolean(KV_URL && KV_TOKEN),
                     data: null
@@ -129,7 +223,7 @@ module.exports = async function handler(req, res) {
         }
     }
 
-    // --- METODE POST: Menerima perubahan dari Admin dan menyebarkan ke Cloud ---
+    // --- METODE POST: Menerima transaksi/booking baru atau perubahan konfigurasi dari perangkat ---
     if (req.method === 'POST') {
         try {
             let payload = req.body;
@@ -138,18 +232,53 @@ module.exports = async function handler(req, res) {
             }
 
             if (!payload || typeof payload !== 'object') {
-                return res.status(400).json({ success: false, error: 'Payload konfigurasi tidak valid' });
+                return res.status(400).json({ success: false, error: 'Payload tidak valid' });
             }
 
-            payload.updatedAt = Date.now();
-            const savedIn = await setData(payload);
+            const existingData = (await getData()) || {};
+
+            // Gabungkan data agar transaksi antar-device tidak saling menimpa
+            const mergedTransactions = mergeTransactions(
+                existingData.transactions,
+                payload.transactions,
+                payload.deletedTransactionIds
+            );
+
+            const mergedVouchers = mergeVouchers(
+                existingData.freeWashVouchers,
+                payload.freeWashVouchers,
+                payload.deletedVoucherIds
+            );
+
+            const mergedClearedVehicles = mergeClearedVehicles(
+                existingData.loyaltyClearedVehicles,
+                payload.loyaltyClearedVehicles
+            );
+
+            const mergedPayload = {
+                ...existingData,
+                ...payload,
+                profile: payload.profile ? { ...(existingData.profile || {}), ...payload.profile } : existingData.profile,
+                services: (Array.isArray(payload.services) && payload.services.length > 0) ? payload.services : (existingData.services || []),
+                catalog: (Array.isArray(payload.catalog) && payload.catalog.length > 0) ? payload.catalog : (existingData.catalog || []),
+                transactions: mergedTransactions,
+                freeWashVouchers: mergedVouchers,
+                loyaltyClearedVehicles: mergedClearedVehicles,
+                adminEmail: payload.adminEmail || existingData.adminEmail,
+                adminPassword: payload.adminPassword || existingData.adminPassword,
+                updatedAt: Date.now()
+            };
+
+            const savedIn = await setData(mergedPayload);
 
             return res.status(200).json({
                 success: true,
-                message: 'Konfigurasi bengkel berhasil disimpan & disinkronkan ke Cloud Vercel!',
+                message: 'Data bengkel & nota transaksi berhasil disinkronkan ke Cloud Vercel!',
                 savedIn: savedIn,
                 kvConfigured: Boolean(KV_URL && KV_TOKEN),
-                updatedAt: payload.updatedAt
+                updatedAt: mergedPayload.updatedAt,
+                transactionCount: mergedTransactions.length,
+                data: mergedPayload
             });
         } catch (err) {
             return res.status(500).json({ success: false, error: err.message });

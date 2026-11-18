@@ -199,18 +199,138 @@ function saveCatalog() {
     triggerAutoSyncToCloud('Katalog Ban & Oli');
 }
 
-function saveTransactions() {
+// Saluran sinkronisasi antar-tab lokal (BroadcastChannel)
+const syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('jaars_bengkel_sync') : null;
+
+function saveTransactions(options = { sync: true, label: 'Transaksi & Nota' }) {
     localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
+    if (syncChannel) {
+        try {
+            syncChannel.postMessage({ type: 'TRANSACTIONS_UPDATED', timestamp: Date.now() });
+        } catch (e) {}
+    }
+    if (options && options.sync !== false && typeof triggerAutoSyncToCloud === 'function') {
+        triggerAutoSyncToCloud(options.label || 'Transaksi & Nota');
+    }
+}
+
+// Helper: Gabungkan daftar transaksi dari Cloud dengan data lokal (Multi-Device Merge)
+function mergeTransactionsClient(localList, incomingList) {
+    const localMap = new Map();
+    (localList || []).forEach(tx => {
+        if (!tx) return;
+        const key = tx.invoiceNo || tx.id;
+        if (key) localMap.set(key, tx);
+    });
+
+    let changed = false;
+    let newCount = 0;
+    const finalMap = new Map(localMap);
+
+    (incomingList || []).forEach(inTx => {
+        if (!inTx) return;
+        const key = inTx.invoiceNo || inTx.id;
+        if (!key) return;
+
+        const locTx = localMap.get(key);
+        if (!locTx) {
+            // Nota / booking baru masuk dari perangkat lain!
+            finalMap.set(key, inTx);
+            changed = true;
+            newCount++;
+        } else {
+            // Transaksi sudah ada, periksa status validasi pembayaran (QRIS / Transfer)
+            const isVerifiedLoc = locTx.paymentValidated === true || locTx.paymentStatus === 'verified';
+            const isVerifiedIn = inTx.paymentValidated === true || inTx.paymentStatus === 'verified';
+            const mergedVerified = isVerifiedLoc || isVerifiedIn;
+
+            const updatedTx = {
+                ...locTx,
+                ...inTx,
+                paymentValidated: mergedVerified,
+                paymentStatus: mergedVerified ? 'verified' : (inTx.paymentStatus || locTx.paymentStatus || 'pending'),
+                validatedAt: inTx.validatedAt || locTx.validatedAt || null,
+                validatedBy: inTx.validatedBy || locTx.validatedBy || null
+            };
+
+            if (JSON.stringify(locTx) !== JSON.stringify(updatedTx)) {
+                finalMap.set(key, updatedTx);
+                changed = true;
+            }
+        }
+    });
+
+    const mergedList = Array.from(finalMap.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    return {
+        changed,
+        newCount,
+        transactions: mergedList
+    };
+}
+
+// Helper: Gabungkan kupon voucher cuci gratis dari Cloud dengan data lokal
+function mergeVouchersClient(localList, incomingList) {
+    const map = new Map();
+    let changed = false;
+    (localList || []).forEach(v => {
+        if (v && (v.id || v.code)) map.set(v.id || v.code, v);
+    });
+
+    (incomingList || []).forEach(inV => {
+        if (!inV || !(inV.id || inV.code)) return;
+        const key = inV.id || inV.code;
+        const locV = map.get(key);
+        if (!locV) {
+            map.set(key, inV);
+            changed = true;
+        } else {
+            const isRedeemed = locV.status === 'redeemed' || inV.status === 'redeemed';
+            const mergedV = {
+                ...locV,
+                ...inV,
+                status: isRedeemed ? 'redeemed' : (inV.status || locV.status),
+                redeemedAt: inV.redeemedAt || locV.redeemedAt || null,
+                redeemedInvoiceNo: inV.redeemedInvoiceNo || locV.redeemedInvoiceNo || null
+            };
+            if (JSON.stringify(locV) !== JSON.stringify(mergedV)) {
+                map.set(key, mergedV);
+                changed = true;
+            }
+        }
+    });
+
+    const list = Array.from(map.values()).sort((a, b) => new Date(b.issuedAt || 0) - new Date(a.issuedAt || 0));
+    return { changed, vouchers: list };
+}
+
+// Helper: Gabungkan kendaraan loyalitas yang dibersihkan/reset
+function mergeClearedVehiclesClient(localList, incomingList) {
+    const map = new Map();
+    let changed = false;
+    (localList || []).forEach(item => {
+        if (!item) return;
+        const key = (item.plate || '').trim().toUpperCase() + '_' + (item.phone || '').trim();
+        if (key !== '_') map.set(key, item);
+    });
+    (incomingList || []).forEach(inItem => {
+        if (!inItem) return;
+        const key = (inItem.plate || '').trim().toUpperCase() + '_' + (inItem.phone || '').trim();
+        if (key !== '_' && !map.has(key)) {
+            map.set(key, inItem);
+            changed = true;
+        }
+    });
+    return { changed, cleared: Array.from(map.values()) };
 }
 
 // --- CLOUD SYNC & MULTI-DEVICE SYNCHRONIZATION (VERCEL) ---
 let autoSyncDebounceTimer = null;
-function triggerAutoSyncToCloud(label = 'Perubahan data') {
+function triggerAutoSyncToCloud(label = 'Perubahan data', extraPayload = {}) {
     if (!state.autoSyncEnabled) return;
     if (autoSyncDebounceTimer) clearTimeout(autoSyncDebounceTimer);
     autoSyncDebounceTimer = setTimeout(() => {
-        syncToCloud(label);
-    }, 1200);
+        syncToCloud(label, extraPayload);
+    }, 800);
 }
 
 function checkUrlSyncPayload() {
@@ -292,7 +412,7 @@ async function syncFromCloud(silent = false) {
             const res = await fetch(cleanUrl, { cache: 'no-store' });
             if (res.ok) {
                 const json = await res.json();
-                if (json && (json.services || json.catalog || json.profile)) {
+                if (json && (json.services || json.catalog || json.profile || json.transactions)) {
                     cloudData = json;
                     source = 'Database Cloud (Firebase/REST)';
                 }
@@ -304,6 +424,8 @@ async function syncFromCloud(silent = false) {
 
     if (cloudData) {
         let changed = false;
+        let newTransactionsCount = 0;
+
         if (cloudData.profile) {
             state.profile = { ...DEFAULT_PROFILE, ...cloudData.profile };
             localStorage.setItem('bengkel_profile', JSON.stringify(state.profile));
@@ -327,15 +449,54 @@ async function syncFromCloud(silent = false) {
             changed = true;
         }
 
+        // Sinkronisasi Transaksi & Nota Booking dari semua perangkat
+        if (Array.isArray(cloudData.transactions) && cloudData.transactions.length > 0) {
+            const mergeResult = mergeTransactionsClient(state.transactions || [], cloudData.transactions);
+            if (mergeResult.changed) {
+                state.transactions = mergeResult.transactions;
+                localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
+                changed = true;
+                newTransactionsCount = mergeResult.newCount;
+            }
+        }
+
+        // Sinkronisasi Kupon Voucher Cuci Gratis
+        if (Array.isArray(cloudData.freeWashVouchers)) {
+            const mergedVouchers = mergeVouchersClient(state.freeWashVouchers || [], cloudData.freeWashVouchers);
+            if (mergedVouchers.changed) {
+                state.freeWashVouchers = mergedVouchers.vouchers;
+                localStorage.setItem('bengkel_free_wash_vouchers', JSON.stringify(state.freeWashVouchers));
+                changed = true;
+            }
+        }
+
+        // Sinkronisasi Penghapusan/Reset Loyalitas Kendaraan
+        if (Array.isArray(cloudData.loyaltyClearedVehicles)) {
+            const mergedCleared = mergeClearedVehiclesClient(state.loyaltyClearedVehicles || [], cloudData.loyaltyClearedVehicles);
+            if (mergedCleared.changed) {
+                state.loyaltyClearedVehicles = mergedCleared.cleared;
+                localStorage.setItem('jaars_loyalty_cleared', JSON.stringify(state.loyaltyClearedVehicles));
+                changed = true;
+            }
+        }
+
         state.lastSyncTime = cloudData.updatedAt || Date.now();
         localStorage.setItem('bengkel_last_sync_time', String(state.lastSyncTime));
 
         if (changed) {
-            renderAll();
+            if (typeof renderDailySummary === 'function') renderDailySummary();
+            if (typeof renderPaidServicesSummary === 'function') renderPaidServicesSummary();
+            if (typeof renderHistory === 'function') renderHistory();
+            if (typeof updateAdminUI === 'function') updateAdminUI();
+            if (typeof updateLoyaltyBadgesAndCounts === 'function') updateLoyaltyBadgesAndCounts();
         }
 
         updateCloudSyncIndicator('synced', `Cloud Aktif (${source})`);
-        if (!silent) {
+        
+        // Tampilkan notifikasi jika ada nota/booking baru masuk dari perangkat lain!
+        if (newTransactionsCount > 0) {
+            showToast(`🔔 Ada ${newTransactionsCount} nota/booking baru masuk dari perangkat lain!`);
+        } else if (!silent) {
             showToast(`✅ Berhasil mengambil data terbaru dari ${source}!`);
         }
         renderCloudSyncModalDetails();
@@ -347,17 +508,21 @@ async function syncFromCloud(silent = false) {
     }
 }
 
-async function syncToCloud(triggerLabel = 'Konfigurasi') {
+async function syncToCloud(triggerLabel = 'Konfigurasi', extraPayload = {}) {
     updateCloudSyncIndicator('syncing', 'Mengunggah ke Cloud...');
 
     const payload = {
         updatedAt: Date.now(),
-        updatedBy: state.profile?.name || 'Admin JAARS',
+        updatedBy: state.profile?.name || (state.isAdmin ? 'Admin JAARS' : 'Pengguna / Pelanggan'),
         profile: state.profile,
         services: state.services,
         catalog: state.catalog,
+        transactions: state.transactions || [],
+        freeWashVouchers: state.freeWashVouchers || [],
+        loyaltyClearedVehicles: state.loyaltyClearedVehicles || [],
         adminEmail: state.adminEmail || DEFAULT_ADMIN.email,
-        adminPassword: state.adminPassword || DEFAULT_ADMIN.password
+        adminPassword: state.adminPassword || DEFAULT_ADMIN.password,
+        ...extraPayload
     };
 
     let saved = false;
@@ -375,6 +540,16 @@ async function syncToCloud(triggerLabel = 'Konfigurasi') {
             if (json && json.success) {
                 saved = true;
                 target = (json.savedIn || []).join(', ') || 'Vercel KV';
+                if (json.data && Array.isArray(json.data.transactions)) {
+                    const mergeResult = mergeTransactionsClient(state.transactions || [], json.data.transactions);
+                    if (mergeResult.changed) {
+                        state.transactions = mergeResult.transactions;
+                        localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
+                        if (typeof renderDailySummary === 'function') renderDailySummary();
+                        if (typeof renderPaidServicesSummary === 'function') renderPaidServicesSummary();
+                        if (typeof renderHistory === 'function') renderHistory();
+                    }
+                }
             }
         }
     } catch (e) {
@@ -410,6 +585,12 @@ async function syncToCloud(triggerLabel = 'Konfigurasi') {
         updateCloudSyncIndicator('synced', 'Tersimpan di Perangkat Ini');
         renderCloudSyncModalDetails();
     }
+
+    if (syncChannel) {
+        try {
+            syncChannel.postMessage({ type: 'SYNC_EVENT', label: triggerLabel, timestamp: Date.now() });
+        } catch (e) {}
+    }
 }
 
 function initCloudSync() {
@@ -425,11 +606,42 @@ function initCloudSync() {
     window.addEventListener('focus', () => {
         syncFromCloud(true);
     });
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            syncFromCloud(true);
+        }
+    });
 
-    // Cek berkala setiap 60 detik jika halaman terbuka
+    // Cek berkala cepat setiap 8 detik jika halaman aktif
     setInterval(() => {
         syncFromCloud(true);
-    }, 60000);
+    }, 8000);
+
+    // Dengar pesan sinkronisasi antar-tab lokal
+    if (syncChannel) {
+        syncChannel.onmessage = (event) => {
+            if (!event || !event.data) return;
+            const msg = event.data;
+            if (msg.type === 'TRANSACTIONS_UPDATED' || msg.type === 'VOUCHERS_UPDATED' || msg.type === 'LOYALTY_CLEARED_UPDATED' || msg.type === 'SYNC_EVENT') {
+                try {
+                    const savedTx = localStorage.getItem('bengkel_transactions');
+                    if (savedTx) state.transactions = JSON.parse(savedTx);
+                    const savedV = localStorage.getItem('bengkel_free_wash_vouchers');
+                    if (savedV) state.freeWashVouchers = JSON.parse(savedV);
+                    const savedCleared = localStorage.getItem('jaars_loyalty_cleared');
+                    if (savedCleared) state.loyaltyClearedVehicles = JSON.parse(savedCleared);
+                    
+                    if (typeof renderDailySummary === 'function') renderDailySummary();
+                    if (typeof renderPaidServicesSummary === 'function') renderPaidServicesSummary();
+                    if (typeof renderHistory === 'function') renderHistory();
+                    if (typeof updateAdminUI === 'function') updateAdminUI();
+                    if (typeof updateLoyaltyBadgesAndCounts === 'function') updateLoyaltyBadgesAndCounts();
+                } catch (e) {
+                    console.error('[BroadcastChannel Sync Error]:', e);
+                }
+            }
+        };
+    }
 }
 
 function generateSyncSharePayload() {
@@ -526,7 +738,8 @@ function renderCloudSyncModalDetails() {
     if (countsEl) {
         const sCount = (state.services || []).length;
         const cCount = (state.catalog || []).length;
-        countsEl.textContent = `${sCount} Tarif • ${cCount} Produk Katalog`;
+        const txCount = (state.transactions || []).length;
+        countsEl.textContent = `${sCount} Tarif • ${cCount} Produk Katalog • ${txCount} Nota & Booking`;
     }
     if (urlInput && !urlInput.value) {
         urlInput.value = state.cloudSyncUrl || '';
@@ -2216,6 +2429,10 @@ window.addCatalogItemToCart = addCatalogItemToCart;
 window.handleCatalogImgError = handleCatalogImgError;
 
 // Cloud Sync Window Exports
+window.syncChannel = syncChannel;
+window.mergeTransactionsClient = mergeTransactionsClient;
+window.mergeVouchersClient = mergeVouchersClient;
+window.mergeClearedVehiclesClient = mergeClearedVehiclesClient;
 window.openCloudSyncModal = openCloudSyncModal;
 window.openCloudQrModal = openCloudQrModal;
 window.syncFromCloud = syncFromCloud;
@@ -3168,7 +3385,12 @@ function processCheckout() {
 
     // Save transaction
     state.transactions.unshift(transaction);
-    saveTransactions();
+    saveTransactions({ sync: true, label: isBookingMode ? `Booking Baru #${bookingCode}` : `Nota Kasir #${bookingCode}` });
+
+    // Langsung sinkronkan transaksi baru ke Cloud Vercel seketika agar langsung terhubung ke sistem admin di semua device
+    if (typeof syncToCloud === 'function') {
+        syncToCloud(isBookingMode ? `Booking Baru #${bookingCode}` : `Nota Kasir #${bookingCode}`);
+    }
 
     // Tandai jika transaksi ini menggunakan / menebus Voucher Cuci Gratis
     (transaction.items || []).forEach(it => {
@@ -3718,8 +3940,16 @@ function saveFreeWashVouchers() {
     }
 }
 
-function saveLoyaltyClearedVehicles() {
+function saveLoyaltyClearedVehicles(options = { sync: true }) {
     localStorage.setItem('jaars_loyalty_cleared', JSON.stringify(state.loyaltyClearedVehicles || []));
+    if (syncChannel) {
+        try {
+            syncChannel.postMessage({ type: 'LOYALTY_CLEARED_UPDATED', timestamp: Date.now() });
+        } catch (e) {}
+    }
+    if (options && options.sync !== false && typeof triggerAutoSyncToCloud === 'function') {
+        triggerAutoSyncToCloud('Pembersihan Loyalitas');
+    }
 }
 
 function getCustomerWashHistory(identifier) {
@@ -6714,11 +6944,15 @@ window.viewHistoryReceipt = function(txId) {
 
 window.deleteTransaction = function(txId) {
     if (confirm('Hapus transaksi ini dari riwayat?')) {
+        const deletedId = txId;
         state.transactions = state.transactions.filter(t => t.id !== txId);
-        saveTransactions();
+        saveTransactions({ sync: false });
         renderHistory();
         renderPaidServicesSummary();
         showToast('Transaksi dihapus dari riwayat.');
+        if (typeof syncToCloud === 'function') {
+            syncToCloud('Hapus Transaksi', { deletedTransactionIds: [deletedId] });
+        }
     }
 };
 
