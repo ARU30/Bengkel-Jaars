@@ -147,12 +147,7 @@ function loadData() {
 
         const savedCatalog = localStorage.getItem('bengkel_catalog');
         const rawCatalog = savedCatalog ? JSON.parse(savedCatalog) : [ ...DEFAULT_CATALOG ];
-        state.catalog = Array.isArray(rawCatalog) 
-            ? rawCatalog.filter(p => p && p.id && !catDelSet.has(p.id)).map(p => ({ ...p, updatedAt: p.updatedAt || 1731900000000 })) 
-            : DEFAULT_CATALOG.map(p => ({ ...p, updatedAt: 1731900000000 }));
-        if (!savedCatalog) {
-            localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
-        }
+        state.catalog = Array.isArray(rawCatalog) ? rawCatalog.filter(p => p && p.id && !catDelSet.has(p.id)) : [ ...DEFAULT_CATALOG ];
 
         const savedAdminEmail = localStorage.getItem('bengkel_admin_email');
         const savedAdminPassword = localStorage.getItem('bengkel_admin_password');
@@ -195,7 +190,7 @@ function loadData() {
         state.profile = { ...DEFAULT_PROFILE };
         state.categories = [ ...DEFAULT_CATEGORIES ];
         state.services = [ ...DEFAULT_SERVICES ];
-        state.catalog = DEFAULT_CATALOG.map(p => ({ ...p, updatedAt: p.updatedAt || 1731900000000 }));
+        state.catalog = [ ...DEFAULT_CATALOG ];
         state.transactions = [];
         state.freeWashVouchers = [];
         state.loyaltyClearedVehicles = [];
@@ -434,17 +429,10 @@ function checkUrlSyncPayload() {
         const hash = window.location.hash || '';
         if (!hash.includes('sync=')) return false;
 
-        let raw = hash.substring(hash.indexOf('sync=') + 5);
+        const raw = hash.substring(hash.indexOf('sync=') + 5);
         if (!raw) return false;
-        if (raw.includes('&')) raw = raw.split('&')[0];
-        raw = decodeURIComponent(raw).trim();
 
-        let jsonStr = '';
-        try {
-            jsonStr = decodeURIComponent(escape(atob(raw)));
-        } catch (e) {
-            jsonStr = atob(raw);
-        }
+        const jsonStr = decodeURIComponent(escape(atob(raw)));
         const data = JSON.parse(jsonStr);
 
         if (data && typeof data === 'object') {
@@ -457,15 +445,7 @@ function checkUrlSyncPayload() {
                 localStorage.setItem('bengkel_services', JSON.stringify(state.services));
             }
             if (Array.isArray(data.catalog) && data.catalog.length > 0) {
-                state.catalog = data.catalog.map(item => {
-                    if (!item.image) {
-                        const def = DEFAULT_CATALOG.find(d => d.id === item.id);
-                        if (def && def.image) {
-                            return { ...item, image: def.image };
-                        }
-                    }
-                    return { ...item, updatedAt: item.updatedAt || Date.now() };
-                });
+                state.catalog = data.catalog;
                 localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
             }
             if (data.adminEmail) {
@@ -481,10 +461,8 @@ function checkUrlSyncPayload() {
                 window.history.replaceState(null, '', window.location.pathname + window.location.search);
             }
 
-            if (typeof renderAll === 'function') renderAll();
-
             setTimeout(() => {
-                showToast('🎉 Selamat! Seluruh tarif, katalog ban & oli, dan profil bengkel berhasil disinkronkan ke perangkat ini!');
+                showToast('🎉 Selamat! Seluruh tarif, katalog, dan profil bengkel berhasil disinkronkan ke perangkat ini!');
             }, 600);
             return true;
         }
@@ -494,56 +472,44 @@ function checkUrlSyncPayload() {
     return false;
 }
 
-// Helper: Menentukan URL endpoint Cloud Sync yang valid untuk berbagai skenario (Vercel, Firebase, lokal)
-function getResolvedCloudSyncUrl() {
-    let url = (state.cloudSyncUrl || '').trim();
-    if (!url) {
-        if (typeof window !== 'undefined' && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
-            return '/api/sync';
-        }
-        return '';
-    }
-
-    if (url.includes('/api/sync')) {
-        return url;
-    }
-    if (url.includes('vercel.app')) {
-        return `${url.replace(/\/+$/, '')}/api/sync`;
-    }
-    if (url.includes('firebaseio.com') || url.includes('.json')) {
-        return url.endsWith('.json') ? url : `${url.replace(/\/+$/, '')}/bengkel_sync.json`;
-    }
-    return url;
-}
-
 async function syncFromCloud(silent = false) {
     updateCloudSyncIndicator('syncing', 'Menyinkronkan data...');
 
     let cloudData = null;
     let source = '';
 
-    const resolvedUrl = getResolvedCloudSyncUrl();
+    // 1. Coba dari Vercel Serverless Endpoint /api/sync
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            cache: 'no-store'
+        });
+        if (res.ok) {
+            const json = await res.json();
+            if (json && json.success && json.synced && json.data) {
+                cloudData = json.data;
+                source = json.storage || 'Cloud Vercel';
+            }
+        }
+    } catch (e) {
+        // Mode offline / dev lokal
+    }
 
-    // 1. Ambil data dari Vercel Serverless Endpoint /api/sync atau Custom Database URL
-    if (resolvedUrl) {
+    // 2. Coba dari Custom Cloud Sync URL (misal Firebase Realtime Database)
+    if (!cloudData && state.cloudSyncUrl) {
         try {
-            const res = await fetch(resolvedUrl, {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' },
-                cache: 'no-store'
-            });
+            const cleanUrl = state.cloudSyncUrl.endsWith('.json') ? state.cloudSyncUrl : `${state.cloudSyncUrl.replace(/\/+$/, '')}/bengkel_sync.json`;
+            const res = await fetch(cleanUrl, { cache: 'no-store' });
             if (res.ok) {
                 const json = await res.json();
-                if (json && json.success && json.data) {
-                    cloudData = json.data;
-                    source = json.storage || 'Cloud Vercel';
-                } else if (json && (json.catalog || json.services || json.transactions || json.profile)) {
+                if (json && (json.services || json.catalog || json.profile || json.transactions)) {
                     cloudData = json;
-                    source = resolvedUrl.includes('firebaseio') ? 'Database Firebase' : 'Database Cloud';
+                    source = 'Database Cloud (Firebase/REST)';
                 }
             }
         } catch (e) {
-            // Mode offline / dev lokal
+            console.warn('[Custom Cloud DB Error]:', e);
         }
     }
 
@@ -670,8 +636,6 @@ async function syncFromCloud(silent = false) {
             if (typeof renderCatalogPanel === 'function') renderCatalogPanel();
             if (typeof renderCatalogProducts === 'function') renderCatalogProducts();
             if (typeof renderCatalogFilterBrands === 'function') renderCatalogFilterBrands();
-            if (typeof renderCatalog === 'function') renderCatalog();
-            if (typeof renderCatalogCategories === 'function') renderCatalogCategories();
         }
 
         updateCloudSyncIndicator('synced', `Cloud Aktif (${source})`);
@@ -717,52 +681,63 @@ async function syncToCloud(triggerLabel = 'Konfigurasi', extraPayload = {}) {
     let saved = false;
     let target = '';
 
-    const resolvedUrl = getResolvedCloudSyncUrl();
-    if (resolvedUrl) {
-        const isFirebase = resolvedUrl.includes('firebaseio.com') || resolvedUrl.endsWith('.json');
-        const method = isFirebase ? 'PUT' : 'POST';
+    // 1. Simpan ke /api/sync (Vercel Serverless)
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            const json = await res.json();
+            if (json && json.success) {
+                saved = true;
+                target = (json.savedIn || []).join(', ') || 'Vercel KV';
+                if (json.data && Array.isArray(json.data.deletedTransactionIds)) {
+                    const mergedDel = Array.from(new Set([...(state.deletedTransactionIds || []), ...json.data.deletedTransactionIds]));
+                    if (mergedDel.length !== (state.deletedTransactionIds || []).length) {
+                        state.deletedTransactionIds = mergedDel;
+                        localStorage.setItem('bengkel_deleted_tx_ids', JSON.stringify(state.deletedTransactionIds));
+                    }
+                }
+                if (json.data && Array.isArray(json.data.deletedCatalogIds)) {
+                    const mergedDelCat = Array.from(new Set([...(state.deletedCatalogIds || []), ...json.data.deletedCatalogIds]));
+                    if (mergedDelCat.length !== (state.deletedCatalogIds || []).length) {
+                        state.deletedCatalogIds = mergedDelCat;
+                        localStorage.setItem('bengkel_deleted_catalog_ids', JSON.stringify(state.deletedCatalogIds));
+                    }
+                }
+                if (json.data && Array.isArray(json.data.catalog)) {
+                    const mergeCatRes = mergeCatalogClient(state.catalog || [], json.data.catalog, state.deletedCatalogIds);
+                    if (mergeCatRes.changed) {
+                        state.catalog = mergeCatRes.catalog;
+                        localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
+                        if (typeof renderCatalogPanel === 'function') renderCatalogPanel();
+                        if (typeof renderCatalogProducts === 'function') renderCatalogProducts();
+                        if (typeof renderCatalogFilterBrands === 'function') renderCatalogFilterBrands();
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        // Endpoint tidak tersedia / offline
+    }
 
+    // 2. Simpan ke Custom Cloud Database jika dikonfigurasi
+    if (state.cloudSyncUrl) {
         try {
-            const res = await fetch(resolvedUrl, {
-                method: method,
+            const cleanUrl = state.cloudSyncUrl.endsWith('.json') ? state.cloudSyncUrl : `${state.cloudSyncUrl.replace(/\/+$/, '')}/bengkel_sync.json`;
+            const res = await fetch(cleanUrl, {
+                method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             if (res.ok) {
-                const json = await res.json();
                 saved = true;
-                target = isFirebase ? 'Firebase' : ((json && json.savedIn && json.savedIn.join(', ')) || 'Cloud Vercel');
-                if (json && json.data) {
-                    if (Array.isArray(json.data.deletedTransactionIds)) {
-                        const mergedDel = Array.from(new Set([...(state.deletedTransactionIds || []), ...json.data.deletedTransactionIds]));
-                        if (mergedDel.length !== (state.deletedTransactionIds || []).length) {
-                            state.deletedTransactionIds = mergedDel;
-                            localStorage.setItem('bengkel_deleted_tx_ids', JSON.stringify(state.deletedTransactionIds));
-                        }
-                    }
-                    if (Array.isArray(json.data.deletedCatalogIds)) {
-                        const mergedDelCat = Array.from(new Set([...(state.deletedCatalogIds || []), ...json.data.deletedCatalogIds]));
-                        if (mergedDelCat.length !== (state.deletedCatalogIds || []).length) {
-                            state.deletedCatalogIds = mergedDelCat;
-                            localStorage.setItem('bengkel_deleted_catalog_ids', JSON.stringify(state.deletedCatalogIds));
-                        }
-                    }
-                    if (Array.isArray(json.data.catalog)) {
-                        const mergeCatRes = mergeCatalogClient(state.catalog || [], json.data.catalog, state.deletedCatalogIds);
-                        if (mergeCatRes.changed) {
-                            state.catalog = mergeCatRes.catalog;
-                            localStorage.setItem('bengkel_catalog', JSON.stringify(state.catalog));
-                            if (typeof renderCatalogPanel === 'function') renderCatalogPanel();
-                            if (typeof renderCatalogProducts === 'function') renderCatalogProducts();
-                            if (typeof renderCatalogFilterBrands === 'function') renderCatalogFilterBrands();
-                            if (typeof renderCatalog === 'function') renderCatalog();
-                            if (typeof renderCatalogCategories === 'function') renderCatalogCategories();
-                        }
-                    }
-                }
+                target = target ? `${target} & Cloud DB` : 'Cloud DB (Firebase/REST)';
             }
         } catch (e) {
-            // Endpoint tidak tersedia / offline
+            console.warn('[Custom Cloud Save Error]:', e);
         }
     }
 
@@ -859,64 +834,20 @@ function initCloudSync() {
             if (typeof renderCatalogPanel === 'function') renderCatalogPanel();
             if (typeof renderCatalogProducts === 'function') renderCatalogProducts();
             if (typeof renderCatalogFilterBrands === 'function') renderCatalogFilterBrands();
-            if (typeof renderCatalog === 'function') renderCatalog();
-            if (typeof renderCatalogCategories === 'function') renderCatalogCategories();
                 } catch (e) {
                     console.error('[BroadcastChannel Sync Error]:', e);
                 }
             }
         };
     }
-
-    // 2. Listener Event Storage Antar-Tab/Jendela (Khusus Safari & Peramban MacBook / PC)
-    window.addEventListener('storage', (event) => {
-        if (!event || !event.key) return;
-        if (event.key === 'bengkel_catalog' || event.key === 'bengkel_deleted_catalog_ids') {
-            try {
-                const savedDeletedCat = localStorage.getItem('bengkel_deleted_catalog_ids');
-                state.deletedCatalogIds = savedDeletedCat ? JSON.parse(savedDeletedCat) : [];
-                const catDelSet = new Set(state.deletedCatalogIds || []);
-                const savedCatalog = localStorage.getItem('bengkel_catalog');
-                if (savedCatalog) {
-                    const parsedCat = JSON.parse(savedCatalog);
-                    state.catalog = Array.isArray(parsedCat) 
-                        ? parsedCat.filter(p => p && p.id && !catDelSet.has(p.id)).map(p => ({ ...p, updatedAt: p.updatedAt || 1731900000000 })) 
-                        : DEFAULT_CATALOG.map(p => ({ ...p, updatedAt: 1731900000000 }));
-                }
-                if (typeof renderCatalogPanel === 'function') renderCatalogPanel();
-                if (typeof renderCatalogProducts === 'function') renderCatalogProducts();
-                if (typeof renderCatalogFilterBrands === 'function') renderCatalogFilterBrands();
-                if (typeof renderCatalog === 'function') renderCatalog();
-                if (typeof renderCatalogCategories === 'function') renderCatalogCategories();
-            } catch (e) {
-                console.error('[Storage Event Catalog Sync Error]:', e);
-            }
-        } else if (event.key.startsWith('bengkel_') || event.key === 'jaars_loyalty_cleared') {
-            try {
-                loadData();
-                renderAll();
-            } catch (e) {
-                console.error('[Storage Event Sync Error]:', e);
-            }
-        }
-    });
 }
 
 function generateSyncSharePayload() {
-    const leanCatalog = (state.catalog || []).map(item => {
-        const lean = { ...item };
-        // Hapus base64 besar dari URL hash agar tidak melampaui batas URL Safari pada MacBook & WhatsApp
-        if (typeof lean.image === 'string' && lean.image.startsWith('data:image')) {
-            delete lean.image;
-        }
-        return lean;
-    });
-
     const payload = {
         updatedAt: Date.now(),
         profile: state.profile,
         services: state.services,
-        catalog: leanCatalog,
+        catalog: state.catalog,
         adminEmail: state.adminEmail || DEFAULT_ADMIN.email,
         adminPassword: state.adminPassword || DEFAULT_ADMIN.password
     };
@@ -2637,8 +2568,6 @@ async function handleSaveCatalogItem(e) {
     saveCatalog();
     closeModal();
     renderCatalogPanel();
-    if (typeof renderCatalog === 'function') renderCatalog();
-    if (typeof renderCatalogCategories === 'function') renderCatalogCategories();
     syncToCloud('Katalog Ban & Oli');
     showToast(`Produk "${brand} ${name}" berhasil disimpan ke katalog!`);
 }
@@ -2656,8 +2585,6 @@ function deleteCatalogItem(id) {
         state.catalog = (state.catalog || []).filter(p => p.id !== id);
         saveCatalog();
         renderCatalogPanel();
-        if (typeof renderCatalog === 'function') renderCatalog();
-        if (typeof renderCatalogCategories === 'function') renderCatalogCategories();
         syncToCloud('Hapus Produk Katalog', { deletedCatalogIds: state.deletedCatalogIds });
         showToast(`Produk "${item.brand} ${item.name}" telah dihapus.`);
     }
@@ -2665,17 +2592,9 @@ function deleteCatalogItem(id) {
 
 function resetDefaultCatalog() {
     if (confirm('PERINGATAN: Semua produk katalog akan dikembalikan ke daftar bawaan default awal. Lanjutkan?')) {
-        state.deletedCatalogIds = [];
-        localStorage.removeItem('bengkel_deleted_catalog_ids');
-        state.catalog = DEFAULT_CATALOG.map(item => ({
-            ...item,
-            updatedAt: Date.now()
-        }));
+        state.catalog = [ ...DEFAULT_CATALOG ];
         saveCatalog();
         renderCatalogPanel();
-        if (typeof renderCatalog === 'function') renderCatalog();
-        if (typeof renderCatalogCategories === 'function') renderCatalogCategories();
-        syncToCloud('Reset Default Katalog', { deletedCatalogIds: [] });
         showToast('Katalog ban & oli berhasil direset ke pengaturan default.');
     }
 }
@@ -2707,29 +2626,22 @@ function addCatalogItemToCart(itemId) {
     const item = state.catalog.find(p => p.id === itemId);
     if (!item) return;
 
-    const existingIndex = state.cart.findIndex(c => c.id === itemId || c.catalogId === itemId || c.name === `${item.brand} ${item.name} (${item.spec})`);
+    const existingIndex = state.cart.findIndex(c => c.catalogId === itemId || c.name === `${item.brand} ${item.name} (${item.spec})`);
     if (existingIndex >= 0) {
         state.cart[existingIndex].qty += 1;
     } else {
         state.cart.push({
-            id: itemId,
+            id: generateId('cart'),
             catalogId: item.id,
             name: `${item.brand} ${item.name} (${item.spec})`,
             price: Number(item.price),
             qty: 1,
             unit: 'pcs',
-            applicable: item.category.includes('motor') ? 'motor' : (item.category.includes('mobil') ? 'mobil' : 'both')
+            applicable: item.category.includes('motor') ? 'motor' : 'mobil'
         });
     }
     renderCart();
-    if (typeof renderCatalog === 'function') renderCatalog();
-    if (typeof renderCatalogPanel === 'function') renderCatalogPanel();
-    if (typeof updateNavCartBadge === 'function') updateNavCartBadge();
-
-    const toastMsg = state.isAdmin 
-        ? `"${item.brand} ${item.name}" dimasukkan ke Struk Kasir!`
-        : `"${item.brand} ${item.name}" ditambahkan ke Form Booking!`;
-    showToast(toastMsg);
+    showToast(`"${item.brand} ${item.name}" dimasukkan ke Struk Kasir!`);
 }
 
 // Expose functions to window for onclick handlers
@@ -2889,10 +2801,7 @@ function updateAdminUI() {
     renderShopStatus();
 
     renderPaymentSections();
-    if (typeof renderCatalogPanel === 'function') renderCatalogPanel();
-    if (typeof renderCatalogProducts === 'function') renderCatalogProducts();
-    if (typeof renderCatalog === 'function') renderCatalog();
-    if (typeof updateNavCartBadge === 'function') updateNavCartBadge();
+    renderCatalogProducts();
     renderPaidServicesSummary();
     if (typeof updateLoyaltyBadgesAndCounts === 'function') updateLoyaltyBadgesAndCounts();
 }
@@ -3068,27 +2977,6 @@ function renderCatalogCategories() {
         `;
     });
 
-    // Kategori Sinkronisasi Katalog Produk Ban & Oli di Form Booking / Kasir
-    const catalogList = state.catalog || [];
-    const countBan = catalogList.filter(p => (p.category || '').includes('ban')).length;
-    const countOli = catalogList.filter(p => (p.category || '').includes('oli')).length;
-
-    const isBanActive = state.activeCategory === 'katalog-ban';
-    const isOliActive = state.activeCategory === 'katalog-oli';
-
-    html += `
-        <button onclick="filterCategory('katalog-ban')" 
-            class="px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${isBanActive ? 'bg-emerald-600 text-white shadow-md' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'}">
-            <span>🛞</span>
-            <span>Katalog Ban (${countBan})</span>
-        </button>
-        <button onclick="filterCategory('katalog-oli')" 
-            class="px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${isOliActive ? 'bg-amber-600 text-white shadow-md' : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200'}">
-            <span>🛢️</span>
-            <span>Katalog Oli (${countOli})</span>
-        </button>
-    `;
-
     container.innerHTML = html;
 }
 
@@ -3103,147 +2991,41 @@ function renderCatalog() {
     const grid = document.getElementById('catalog-items-grid');
     if (!grid) return;
 
-    const q = (state.searchQuery || '').toLowerCase();
-
-    // 1. Jika pengguna memilih kategori khusus Katalog Ban atau Katalog Oli
-    if (state.activeCategory === 'katalog-ban' || state.activeCategory === 'katalog-oli') {
-        const isOil = state.activeCategory === 'katalog-oli';
-        let catItems = (state.catalog || []).filter(item => {
-            if (isOil) {
-                if (!item.category.includes('oli')) return false;
-                if (state.selectedVehicle === 'motor' && item.category === 'oli-mobil') return false;
-                if (state.selectedVehicle === 'mobil' && item.category === 'oli-motor') return false;
-            } else {
-                if (!item.category.includes('ban')) return false;
-                if (state.selectedVehicle === 'motor' && item.category !== 'ban-motor') return false;
-                if (state.selectedVehicle === 'mobil' && item.category !== 'ban-mobil') return false;
-            }
-
-            if (q) {
-                const matchBrand = (item.brand || '').toLowerCase().includes(q);
-                const matchName = (item.name || '').toLowerCase().includes(q);
-                const matchSpec = (item.spec || '').toLowerCase().includes(q);
-                const matchDesc = (item.desc || '').toLowerCase().includes(q);
-                if (!matchBrand && !matchName && !matchSpec && !matchDesc) return false;
-            }
-            return true;
-        });
-
-        if (catItems.length === 0) {
-            grid.innerHTML = `
-                <div class="col-span-full py-12 text-center text-slate-400">
-                    <div class="text-4xl mb-2">${isOil ? '🛢️' : '🛞'}</div>
-                    <p class="font-medium text-slate-700">Tidak ada produk ${isOil ? 'oli' : 'ban'} yang cocok dengan filter kendaraan (${state.selectedVehicle === 'motor' ? 'Sepeda Motor' : 'Mobil'}).</p>
-                    <p class="text-xs text-slate-400 mt-1">Ganti filter kendaraan atau tinjau seluruh produk di menu "Katalog Ban & Oli".</p>
-                    <button type="button" onclick="switchTab('catalog')" class="mt-3 px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-xs hover:bg-blue-700">
-                        Buka Tab Katalog Lengkap ➔
-                    </button>
-                </div>
-            `;
-            return;
-        }
-
-        grid.innerHTML = catItems.map(item => {
-            const inCartItem = state.cart.find(c => c.id === item.id || c.catalogId === item.id);
-            const qtyInCart = inCartItem ? inCartItem.qty : 0;
-            const badgeColor = isOil ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
-
-            return `
-                <div class="service-card bg-white rounded-2xl border border-slate-200/80 p-4 flex flex-col justify-between relative group cursor-pointer hover:border-blue-500 shadow-sm"
-                     onclick="addCatalogItemToCart('${item.id}')">
-                    ${qtyInCart > 0 ? `
-                        <span class="absolute -top-2 -right-2 bg-blue-600 text-white font-bold text-xs rounded-full w-6 h-6 flex items-center justify-center shadow-md animate-pulse">
-                            ${qtyInCart}
-                        </span>
-                    ` : ''}
-
-                    <div>
-                        <div class="flex items-center justify-between mb-1.5">
-                            <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${badgeColor}">
-                                ${escapeHtml(item.brand)} • ${isOil ? 'Oli' : 'Ban'}
-                            </span>
-                            <span class="text-[11px] font-mono font-semibold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">
-                                ${escapeHtml(item.spec)}
-                            </span>
-                        </div>
-                        <h3 class="font-bold text-slate-800 text-sm leading-snug group-hover:text-blue-600 transition-colors">
-                            ${escapeHtml(item.name)}
-                        </h3>
-                        <p class="text-xs text-slate-500 mt-1 line-clamp-2">
-                            ${item.desc ? escapeHtml(item.desc) : 'Produk original bergaransi resmi'}
-                        </p>
-                    </div>
-
-                    <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                        <div>
-                            <div class="text-[10px] text-slate-400 font-medium">Harga Resmi (${item.stockStatus === 'limited' ? '⚠️ Stok Terbatas' : '✅ Ready'})</div>
-                            <div class="text-base font-extrabold text-emerald-700">
-                                ${formatRupiah(item.price)}
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-1.5">
-                            <button type="button" onclick="event.stopPropagation(); openCatalogDetailModal('${item.id}')"
-                                class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-xs transition-all"
-                                title="Tinjau detail produk & spesifikasi">
-                                🔍
-                            </button>
-                            <button type="button" 
-                                class="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-lg group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm"
-                                title="${state.isAdmin ? 'Tambah ke Struk Kasir' : 'Tambah ke Booking'}">
-                                +
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        return;
-    }
-
-    // 2. Filter Layanan Standar
     let filtered = state.services.filter(s => {
+        // Filter by category
         if (state.activeCategory !== 'all' && s.categoryId !== state.activeCategory) {
             return false;
         }
+
+        // Filter by vehicle applicability
         if (s.applicable !== 'both' && s.applicable !== state.selectedVehicle) {
             return false;
         }
-        if (q) {
-            const matchName = s.name.toLowerCase().includes(q);
-            const matchDesc = (s.desc || '').toLowerCase().includes(q);
+
+        // Search query
+        if (state.searchQuery) {
+            const matchName = s.name.toLowerCase().includes(state.searchQuery);
+            const matchDesc = (s.desc || '').toLowerCase().includes(state.searchQuery);
             if (!matchName && !matchDesc) return false;
         }
+
         return true;
     });
 
-    // 3. Jika pengguna sedang mencari (Search Query) dan di tab "all", sertakan juga produk Katalog Ban & Oli yang cocok
-    let matchingCatalogItems = [];
-    if (q && state.activeCategory === 'all') {
-        matchingCatalogItems = (state.catalog || []).filter(item => {
-            if (state.selectedVehicle === 'motor' && (item.category === 'ban-mobil' || item.category === 'oli-mobil')) return false;
-            if (state.selectedVehicle === 'mobil' && (item.category === 'ban-motor' || item.category === 'oli-motor')) return false;
-            const matchBrand = (item.brand || '').toLowerCase().includes(q);
-            const matchName = (item.name || '').toLowerCase().includes(q);
-            const matchSpec = (item.spec || '').toLowerCase().includes(q);
-            const matchDesc = (item.desc || '').toLowerCase().includes(q);
-            return matchBrand || matchName || matchSpec || matchDesc;
-        });
-    }
-
-    if (filtered.length === 0 && matchingCatalogItems.length === 0) {
+    if (filtered.length === 0) {
         grid.innerHTML = `
             <div class="col-span-full py-12 text-center text-slate-400">
                 <svg class="w-12 h-12 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <p class="font-medium">Tidak ada layanan atau barang yang sesuai filter.</p>
-                <p class="text-xs text-slate-400 mt-1">Coba ganti kategori, jenis kendaraan, atau cek menu "Katalog Ban & Oli".</p>
+                <p class="text-xs text-slate-400 mt-1">Coba ganti kategori, jenis kendaraan, atau tambah tarif di menu "Kelola Tarif".</p>
             </div>
         `;
         return;
     }
 
-    let servicesHtml = filtered.map(item => {
+    grid.innerHTML = filtered.map(item => {
         const currentPrice = state.selectedVehicle === 'motor' ? item.priceMotor : item.priceMobil;
         const inCartItem = state.cart.find(c => c.id === item.id);
         const qtyInCart = inCartItem ? inCartItem.qty : 0;
@@ -3276,10 +3058,10 @@ function renderCatalog() {
                         </span>
                     </div>
                     <h3 class="font-bold text-slate-800 text-sm leading-snug group-hover:text-blue-600 transition-colors">
-                        ${escapeHtml(item.name)}
+                        ${item.name}
                     </h3>
                     <p class="text-xs text-slate-500 mt-1 line-clamp-2">
-                        ${escapeHtml(item.desc || '-')}
+                        ${item.desc || '-'}
                     </p>
                 </div>
 
@@ -3299,78 +3081,12 @@ function renderCatalog() {
             </div>
         `;
     }).join('');
-
-    let catalogHtml = matchingCatalogItems.map(item => {
-        const inCartItem = state.cart.find(c => c.id === item.id || c.catalogId === item.id);
-        const qtyInCart = inCartItem ? inCartItem.qty : 0;
-        const isOil = item.category.includes('oli');
-        const badgeColor = isOil ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
-
-        return `
-            <div class="service-card bg-white rounded-2xl border-2 border-emerald-300/80 p-4 flex flex-col justify-between relative group cursor-pointer hover:border-emerald-500 shadow-sm"
-                 onclick="addCatalogItemToCart('${item.id}')">
-                ${qtyInCart > 0 ? `
-                    <span class="absolute -top-2 -right-2 bg-emerald-600 text-white font-bold text-xs rounded-full w-6 h-6 flex items-center justify-center shadow-md animate-pulse">
-                        ${qtyInCart}
-                    </span>
-                ` : ''}
-
-                <div>
-                    <div class="flex items-center justify-between mb-1.5">
-                        <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${badgeColor}">
-                            📦 Katalog • ${escapeHtml(item.brand)}
-                        </span>
-                        <span class="text-[11px] font-mono font-semibold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">
-                            ${escapeHtml(item.spec)}
-                        </span>
-                    </div>
-                    <h3 class="font-bold text-slate-800 text-sm leading-snug group-hover:text-emerald-700 transition-colors">
-                        ${escapeHtml(item.name)}
-                    </h3>
-                    <p class="text-xs text-slate-500 mt-1 line-clamp-2">
-                        ${escapeHtml(item.desc || '')}
-                    </p>
-                </div>
-
-                <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                    <div>
-                        <div class="text-[10px] text-slate-400 font-medium">Harga Resmi (${item.stockStatus === 'limited' ? 'Stok Terbatas' : 'Ready'})</div>
-                        <div class="text-base font-extrabold text-emerald-700">
-                            ${formatRupiah(item.price)}
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-1.5">
-                        <button type="button" onclick="event.stopPropagation(); openCatalogDetailModal('${item.id}')"
-                            class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-xs transition-all"
-                            title="Tinjau detail produk & spesifikasi">
-                            🔍
-                        </button>
-                        <button type="button" 
-                            class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-lg group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-sm"
-                            title="${state.isAdmin ? 'Tambah ke Struk Kasir' : 'Tambah ke Booking'}">
-                            +
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    grid.innerHTML = servicesHtml + catalogHtml;
 }
 
 // --- CART OPERATIONS ---
 window.addToCart = function(serviceId) {
     const service = state.services.find(s => s.id === serviceId);
-    if (!service) {
-        // Cek jika produk berasal dari katalog ban & oli
-        const catItem = (state.catalog || []).find(p => p.id === serviceId);
-        if (catItem) {
-            addCatalogItemToCart(serviceId);
-            return;
-        }
-        return;
-    }
+    if (!service) return;
 
     const price = state.selectedVehicle === 'motor' ? service.priceMotor : service.priceMobil;
     const existingIndex = state.cart.findIndex(c => c.id === serviceId);
@@ -3392,7 +3108,6 @@ window.addToCart = function(serviceId) {
 
     renderCart();
     renderCatalog();
-    if (typeof updateNavCartBadge === 'function') updateNavCartBadge();
 };
 
 window.updateCartQty = function(id, delta) {
@@ -3403,25 +3118,6 @@ window.updateCartQty = function(id, delta) {
     if (state.cart[idx].qty <= 0) {
         state.cart.splice(idx, 1);
     }
-
-    renderCart();
-    renderCatalog();
-    if (typeof updateNavCartBadge === 'function') updateNavCartBadge();
-};
-
-function updateNavCartBadge() {
-    const badge = document.getElementById('nav-pos-badge');
-    const totalQty = (state.cart || []).reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
-    if (badge) {
-        if (totalQty > 0) {
-            badge.textContent = totalQty;
-            badge.classList.remove('hidden');
-        } else {
-            badge.classList.add('hidden');
-        }
-    }
-}
-window.updateNavCartBadge = updateNavCartBadge;
 
     renderCart();
     renderCatalog();
@@ -3492,7 +3188,6 @@ function renderCart() {
             </div>
         `;
         renderCartTotalsOnly();
-        if (typeof updateNavCartBadge === 'function') updateNavCartBadge();
         return;
     }
 
@@ -3551,7 +3246,6 @@ function renderCart() {
 
     renderCartTotalsOnly();
     if (typeof updateCartWashLoyaltyIndicator === 'function') updateCartWashLoyaltyIndicator();
-    if (typeof updateNavCartBadge === 'function') updateNavCartBadge();
 }
 
 function renderCartTotalsOnly() {

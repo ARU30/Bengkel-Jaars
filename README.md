@@ -1,4 +1,4 @@
-# 🛞 Pelayanan Bengkel Ban & Cuci Kendaraan
+# 🛞 Kalkulator & Kasir Bengkel Ban & Cuci Kendaraan
 
 Aplikasi kalkulasi harga, kasir (POS), dan manajemen tarif mandiri berbasis web yang dirancang khusus untuk operasional **bengkel tambal ban**, **bongkar pasang ban/roda**, dan **cuci kendaraan mobil/motor**.
 
