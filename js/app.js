@@ -51,6 +51,7 @@ let state = {
     historyFilter: 'month', // 'today' | 'week' | 'month' | 'year' | 'all'
     selectedFilterMonth: new Date().getMonth().toString(), // '0'..'11' or 'all'
     selectedFilterYear: new Date().getFullYear(),
+    deletedTransactionIds: JSON.parse(localStorage.getItem('bengkel_deleted_tx_ids') || '[]'),
     
     // Program Loyalitas Cuci Kendaraan (Cuci 7x Gratis 1x)
     freeWashVouchers: JSON.parse(localStorage.getItem('bengkel_free_wash_vouchers') || '[]'),
@@ -99,10 +100,13 @@ function generateId(prefix = 'tx') {
 }
 
 // ID seed/contoh transaksi bawaan (JANGAN dipakai sebagai transaksi riil atau diunggah ke cloud)
-const SEED_TRANSACTION_IDS = new Set(['INV-JAARS-001', 'INV-JAARS-002', 'INV-JAARS-003', 'INV-849201', 'INV-849188', 'INV-849150']);
 function isSeedTransaction(tx) {
     if (!tx) return false;
-    return SEED_TRANSACTION_IDS.has(tx.id) || SEED_TRANSACTION_IDS.has(tx.invoiceNo);
+    const id = String(tx.id || '');
+    const inv = String(tx.invoiceNo || '');
+    if (id.startsWith('INV-JAARS-')) return true;
+    if (/^INV-84[789]\d{3}$/.test(inv)) return true;
+    return false;
 }
 
 // --- LOCAL STORAGE MANAGER ---
@@ -117,17 +121,24 @@ function loadData() {
         const savedServices = localStorage.getItem('bengkel_services');
         state.services = savedServices ? JSON.parse(savedServices) : [ ...DEFAULT_SERVICES ];
 
+        const savedDeleted = localStorage.getItem('bengkel_deleted_tx_ids');
+        state.deletedTransactionIds = savedDeleted ? JSON.parse(savedDeleted) : [];
+        const deletedSet = new Set(state.deletedTransactionIds || []);
+
         const savedTransactions = localStorage.getItem('bengkel_transactions');
         if (savedTransactions) {
             try {
                 const parsed = JSON.parse(savedTransactions);
-                state.transactions = Array.isArray(parsed) ? parsed.filter(tx => !isSeedTransaction(tx)) : [];
+                state.transactions = Array.isArray(parsed) 
+                    ? parsed.filter(tx => !isSeedTransaction(tx) && !deletedSet.has(tx.id) && !deletedSet.has(tx.invoiceNo))
+                    : [];
             } catch (e) {
                 state.transactions = [];
             }
         } else {
             state.transactions = [];
         }
+        localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
 
         const savedCatalog = localStorage.getItem('bengkel_catalog');
         state.catalog = savedCatalog ? JSON.parse(savedCatalog) : [ ...DEFAULT_CATALOG ];
@@ -199,6 +210,8 @@ function saveCatalog() {
 const syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('jaars_bengkel_sync') : null;
 
 function saveTransactions(options = {}) {
+    const delSet = new Set(state.deletedTransactionIds || []);
+    state.transactions = (state.transactions || []).filter(tx => !isSeedTransaction(tx) && !delSet.has(tx.id) && !delSet.has(tx.invoiceNo));
     localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
     if (syncChannel) {
         try {
@@ -208,11 +221,18 @@ function saveTransactions(options = {}) {
 }
 
 // Helper: Gabungkan daftar transaksi dari Cloud dengan data lokal (Multi-Device Merge)
-// Transaksi seed/contoh (INV-JAARS-*) TIDAK dihitung sebagai "baru"
-function mergeTransactionsClient(localList, incomingList) {
+// Transaksi seed/contoh (INV-JAARS-*) atau yang sudah dihapus TIDAK dihitung sebagai "baru"
+function mergeTransactionsClient(localList, incomingList, deletedIds = []) {
+    const deletedSet = new Set([
+        ...((state && state.deletedTransactionIds) || []),
+        ...(deletedIds || [])
+    ]);
+
     const localMap = new Map();
     (localList || []).forEach(tx => {
         if (!tx) return;
+        if (isSeedTransaction(tx)) return;
+        if (deletedSet.has(tx.id) || deletedSet.has(tx.invoiceNo)) return;
         const key = tx.invoiceNo || tx.id;
         if (key) localMap.set(key, tx);
     });
@@ -226,6 +246,8 @@ function mergeTransactionsClient(localList, incomingList) {
         if (!inTx) return;
         // Abaikan seed transactions dari cloud agar tidak muncul "random" di admin
         if (isSeedTransaction(inTx)) return;
+        // Abaikan transaksi yang sudah dihapus manual (tombstone)
+        if (deletedSet.has(inTx.id) || deletedSet.has(inTx.invoiceNo)) return;
 
         const key = inTx.invoiceNo || inTx.id;
         if (!key) return;
@@ -258,6 +280,11 @@ function mergeTransactionsClient(localList, incomingList) {
             }
         }
     });
+
+    // Jika ada data di localList yang dihapus karena masuk deletedSet
+    if ((localList || []).length !== finalMap.size) {
+        changed = true;
+    }
 
     const mergedList = Array.from(finalMap.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
     return {
@@ -449,14 +476,42 @@ async function syncFromCloud(silent = false) {
             changed = true;
         }
 
+        // Sinkronisasi Penghapusan Nota (Tombstone Deletion)
+        if (Array.isArray(cloudData.deletedTransactionIds)) {
+            const currentDeleted = new Set(state.deletedTransactionIds || []);
+            let delChanged = false;
+            cloudData.deletedTransactionIds.forEach(id => {
+                if (id && !currentDeleted.has(id)) {
+                    currentDeleted.add(id);
+                    delChanged = true;
+                }
+            });
+            if (delChanged) {
+                state.deletedTransactionIds = Array.from(currentDeleted);
+                localStorage.setItem('bengkel_deleted_tx_ids', JSON.stringify(state.deletedTransactionIds));
+                changed = true;
+            }
+        }
+
         // Sinkronisasi Transaksi & Nota Booking dari semua perangkat
-        if (Array.isArray(cloudData.transactions) && cloudData.transactions.length > 0) {
-            const mergeResult = mergeTransactionsClient(state.transactions || [], cloudData.transactions);
+        if (Array.isArray(cloudData.transactions)) {
+            const mergeResult = mergeTransactionsClient(state.transactions || [], cloudData.transactions, state.deletedTransactionIds);
             if (mergeResult.changed) {
                 state.transactions = mergeResult.transactions;
                 localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
                 changed = true;
                 newTransactionsCount = mergeResult.newCount;
+            }
+        }
+
+        // Pastikan transaksi lokal bersih dari seed dan id terhapus
+        if (state.deletedTransactionIds && state.deletedTransactionIds.length > 0) {
+            const delSet = new Set(state.deletedTransactionIds);
+            const beforeCount = (state.transactions || []).length;
+            state.transactions = (state.transactions || []).filter(tx => !isSeedTransaction(tx) && !delSet.has(tx.id) && !delSet.has(tx.invoiceNo));
+            if (state.transactions.length !== beforeCount) {
+                localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
+                changed = true;
             }
         }
 
@@ -494,7 +549,7 @@ async function syncFromCloud(silent = false) {
         updateCloudSyncIndicator('synced', `Cloud Aktif (${source})`);
         
         // Tampilkan notifikasi jika ada nota/booking baru masuk dari perangkat lain!
-        if (newTransactionsCount > 0) {
+        if (state.isAdmin && newTransactionsCount > 0) {
             showToast(`🔔 Ada ${newTransactionsCount} nota/booking baru masuk dari perangkat lain!`);
         } else if (!silent) {
             showToast(`✅ Berhasil mengambil data terbaru dari ${source}!`);
@@ -511,14 +566,16 @@ async function syncFromCloud(silent = false) {
 async function syncToCloud(triggerLabel = 'Konfigurasi', extraPayload = {}) {
     updateCloudSyncIndicator('syncing', 'Mengunggah ke Cloud...');
 
+    const delSet = new Set(state.deletedTransactionIds || []);
     const payload = {
         updatedAt: Date.now(),
         updatedBy: state.profile?.name || (state.isAdmin ? 'Admin JAARS' : 'Pengguna / Pelanggan'),
         profile: state.profile,
         services: state.services,
         catalog: state.catalog,
-        // Filter seed/contoh transaksi bawaan agar TIDAK ikut diunggah ke cloud
-        transactions: (state.transactions || []).filter(tx => !isSeedTransaction(tx)),
+        // Filter seed/contoh transaksi bawaan dan transaksi yang sudah dihapus agar TIDAK ikut diunggah ke cloud
+        transactions: (state.transactions || []).filter(tx => !isSeedTransaction(tx) && !delSet.has(tx.id) && !delSet.has(tx.invoiceNo)),
+        deletedTransactionIds: state.deletedTransactionIds || [],
         freeWashVouchers: state.freeWashVouchers || [],
         loyaltyClearedVehicles: state.loyaltyClearedVehicles || [],
         adminEmail: state.adminEmail || DEFAULT_ADMIN.email,
@@ -541,8 +598,15 @@ async function syncToCloud(triggerLabel = 'Konfigurasi', extraPayload = {}) {
             if (json && json.success) {
                 saved = true;
                 target = (json.savedIn || []).join(', ') || 'Vercel KV';
+                if (json.data && Array.isArray(json.data.deletedTransactionIds)) {
+                    const mergedDel = Array.from(new Set([...(state.deletedTransactionIds || []), ...json.data.deletedTransactionIds]));
+                    if (mergedDel.length !== (state.deletedTransactionIds || []).length) {
+                        state.deletedTransactionIds = mergedDel;
+                        localStorage.setItem('bengkel_deleted_tx_ids', JSON.stringify(state.deletedTransactionIds));
+                    }
+                }
                 if (json.data && Array.isArray(json.data.transactions)) {
-                    const mergeResult = mergeTransactionsClient(state.transactions || [], json.data.transactions);
+                    const mergeResult = mergeTransactionsClient(state.transactions || [], json.data.transactions, state.deletedTransactionIds);
                     if (mergeResult.changed) {
                         state.transactions = mergeResult.transactions;
                         localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
@@ -623,10 +687,18 @@ function initCloudSync() {
         syncChannel.onmessage = (event) => {
             if (!event || !event.data) return;
             const msg = event.data;
-            if (msg.type === 'TRANSACTIONS_UPDATED' || msg.type === 'VOUCHERS_UPDATED' || msg.type === 'LOYALTY_CLEARED_UPDATED' || msg.type === 'SYNC_EVENT') {
+            if (msg.type === 'TRANSACTIONS_UPDATED' || msg.type === 'TRANSACTION_DELETED' || msg.type === 'VOUCHERS_UPDATED' || msg.type === 'LOYALTY_CLEARED_UPDATED' || msg.type === 'SYNC_EVENT') {
                 try {
+                    const savedDeleted = localStorage.getItem('bengkel_deleted_tx_ids');
+                    if (savedDeleted) {
+                        state.deletedTransactionIds = JSON.parse(savedDeleted);
+                    }
                     const savedTx = localStorage.getItem('bengkel_transactions');
-                    if (savedTx) state.transactions = JSON.parse(savedTx);
+                    if (savedTx) {
+                        const parsed = JSON.parse(savedTx);
+                        const delSet = new Set(state.deletedTransactionIds || []);
+                        state.transactions = parsed.filter(tx => !isSeedTransaction(tx) && !delSet.has(tx.id) && !delSet.has(tx.invoiceNo));
+                    }
                     const savedV = localStorage.getItem('bengkel_free_wash_vouchers');
                     if (savedV) state.freeWashVouchers = JSON.parse(savedV);
                     const savedCleared = localStorage.getItem('jaars_loyalty_cleared');
@@ -3765,7 +3837,10 @@ function populateYearFilterOptions() {
 
     const currentYear = new Date().getFullYear();
     const years = new Set([currentYear]);
-    state.transactions.forEach(tx => {
+    const delSet = new Set(state.deletedTransactionIds || []);
+    (state.transactions || []).forEach(tx => {
+        if (!tx || isSeedTransaction(tx)) return;
+        if (delSet.has(tx.id) || delSet.has(tx.invoiceNo)) return;
         if (tx.date) {
             const yr = new Date(tx.date).getFullYear();
             if (!isNaN(yr)) years.add(yr);
@@ -3794,8 +3869,11 @@ function highlightActivePeriodButton() {
 
 function getFilteredTransactions() {
     const now = new Date();
-    return state.transactions.filter(tx => {
-        if (!tx.date) return false;
+    const delSet = new Set(state.deletedTransactionIds || []);
+    return (state.transactions || []).filter(tx => {
+        if (!tx || !tx.date) return false;
+        if (isSeedTransaction(tx)) return false;
+        if (delSet.has(tx.id) || delSet.has(tx.invoiceNo)) return false;
         const txDate = new Date(tx.date);
         if (isNaN(txDate.getTime())) return false;
 
@@ -3983,7 +4061,10 @@ function getCustomerWashHistory(identifier) {
         (normPhoneId && c.phone && c.phone === normPhoneId)
     );
 
+    const delSet = new Set(state.deletedTransactionIds || []);
     const washTxList = (state.transactions || []).filter(tx => {
+        if (!tx || isSeedTransaction(tx)) return false;
+        if (delSet.has(tx.id) || delSet.has(tx.invoiceNo)) return false;
         if (!hasWashService(tx)) return false;
         const pNorm = normalizePlate(tx.plateNumber);
         const phNorm = normalizePhone(tx.customerPhone);
@@ -4036,8 +4117,11 @@ function getCustomerWashHistory(identifier) {
 function getAllWashCustomers() {
     const map = new Map();
     const clearedList = state.loyaltyClearedVehicles || [];
+    const delSet = new Set(state.deletedTransactionIds || []);
 
     (state.transactions || []).forEach(tx => {
+        if (!tx || isSeedTransaction(tx)) return;
+        if (delSet.has(tx.id) || delSet.has(tx.invoiceNo)) return;
         if (!hasWashService(tx)) return;
         const plate = (tx.plateNumber && tx.plateNumber !== '-') ? tx.plateNumber : '';
         const phone = tx.customerPhone || '';
@@ -5625,7 +5709,12 @@ function renderPaidServicesSummary() {
     };
 
     // 1. Ambil seluruh transaksi hari ini
-    const allTodayTx = (state.transactions || []).filter(isTxToday);
+    const delSet = new Set(state.deletedTransactionIds || []);
+    const allTodayTx = (state.transactions || []).filter(tx => {
+        if (!tx || isSeedTransaction(tx)) return false;
+        if (delSet.has(tx.id) || delSet.has(tx.invoiceNo)) return false;
+        return isTxToday(tx);
+    });
 
     // 2. Agregasi Rincian Pembayaran Per Setiap Layanan Hari Ini
     const serviceMap = {};
@@ -6012,7 +6101,12 @@ window.printTodaySummary = function() {
                txDate.getFullYear() === now.getFullYear();
     };
 
-    const allTodayTx = (state.transactions || []).filter(isTxToday);
+    const delSet = new Set(state.deletedTransactionIds || []);
+    const allTodayTx = (state.transactions || []).filter(tx => {
+        if (!tx || isSeedTransaction(tx)) return false;
+        if (delSet.has(tx.id) || delSet.has(tx.invoiceNo)) return false;
+        return isTxToday(tx);
+    });
     const totalOmset = allTodayTx.reduce((sum, tx) => sum + (Number(tx.total) || 0), 0);
     const totalDiscount = allTodayTx.reduce((sum, tx) => sum + (Number(tx.discountAmount) || 0), 0);
 
@@ -6183,7 +6277,12 @@ window.exportTodayPaidServicesToExcel = function() {
                txDate.getFullYear() === now.getFullYear();
     };
 
-    const allTodayTx = (state.transactions || []).filter(isTxToday);
+    const delSet = new Set(state.deletedTransactionIds || []);
+    const allTodayTx = (state.transactions || []).filter(tx => {
+        if (!tx || isSeedTransaction(tx)) return false;
+        if (delSet.has(tx.id) || delSet.has(tx.invoiceNo)) return false;
+        return isTxToday(tx);
+    });
     if (allTodayTx.length === 0) {
         alert('Belum ada transaksi hari ini untuk diekspor ke Excel.');
         return;
@@ -6387,9 +6486,12 @@ function renderHistory() {
         const now = new Date();
         let totalYrTx = 0, totalYrMotor = 0, totalYrMobil = 0, totalYrOmset = 0;
 
+        const delSet = new Set(state.deletedTransactionIds || []);
         let rowsHTML = MONTH_NAMES_ID.map((mName, mIdx) => {
-            const mTx = state.transactions.filter(t => {
-                if (!t.date) return false;
+            const mTx = (state.transactions || []).filter(t => {
+                if (!t || !t.date) return false;
+                if (isSeedTransaction(t)) return false;
+                if (delSet.has(t.id) || delSet.has(t.invoiceNo)) return false;
                 const d = new Date(t.date);
                 return d.getFullYear() === state.selectedFilterYear && d.getMonth() === mIdx;
             });
@@ -6531,10 +6633,13 @@ function exportIncomeReportToExcel() {
     ];
 
     // Masukkan data 12 Bulan ke Sheet 1
+    const delSet = new Set(state.deletedTransactionIds || []);
     let totalYrTx = 0, totalYrMotor = 0, totalYrMobil = 0, totalYrTotal = 0;
     for (let m = 0; m < 12; m++) {
-        const mTx = state.transactions.filter(t => {
-            if (!t.date) return false;
+        const mTx = (state.transactions || []).filter(t => {
+            if (!t || !t.date) return false;
+            if (isSeedTransaction(t)) return false;
+            if (delSet.has(t.id) || delSet.has(t.invoiceNo)) return false;
             const d = new Date(t.date);
             return d.getFullYear() === state.selectedFilterYear && d.getMonth() === m;
         });
@@ -6948,14 +7053,36 @@ window.viewHistoryReceipt = function(txId) {
 
 window.deleteTransaction = function(txId) {
     if (confirm('Hapus transaksi ini dari riwayat?')) {
-        const deletedId = txId;
-        state.transactions = state.transactions.filter(t => t.id !== txId);
-        saveTransactions({ sync: false });
+        const txToDelete = (state.transactions || []).find(t => t.id === txId || t.invoiceNo === txId);
+        const deletedKeys = [txId];
+        if (txToDelete) {
+            if (txToDelete.id && !deletedKeys.includes(txToDelete.id)) deletedKeys.push(txToDelete.id);
+            if (txToDelete.invoiceNo && !deletedKeys.includes(txToDelete.invoiceNo)) deletedKeys.push(txToDelete.invoiceNo);
+        }
+
+        const currentDeleted = new Set(state.deletedTransactionIds || []);
+        deletedKeys.forEach(k => currentDeleted.add(k));
+        state.deletedTransactionIds = Array.from(currentDeleted);
+        localStorage.setItem('bengkel_deleted_tx_ids', JSON.stringify(state.deletedTransactionIds));
+
+        state.transactions = (state.transactions || []).filter(t => t.id !== txId && t.invoiceNo !== txId && !currentDeleted.has(t.id) && !currentDeleted.has(t.invoiceNo));
+        localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
+
+        if (syncChannel) {
+            try {
+                syncChannel.postMessage({ type: 'TRANSACTION_DELETED', deletedIds: deletedKeys, timestamp: Date.now() });
+            } catch (e) {}
+        }
+
         renderHistory();
         renderPaidServicesSummary();
-        showToast('Transaksi dihapus dari riwayat.');
+        if (typeof renderDailySummary === 'function') renderDailySummary();
+        if (typeof updateAdminUI === 'function') updateAdminUI();
+        if (typeof updateLoyaltyBadgesAndCounts === 'function') updateLoyaltyBadgesAndCounts();
+        showToast('Transaksi berhasil dihapus dari riwayat.');
+
         if (typeof syncToCloud === 'function') {
-            syncToCloud('Hapus Transaksi', { deletedTransactionIds: [deletedId] });
+            syncToCloud('Hapus Transaksi', { deletedTransactionIds: state.deletedTransactionIds });
         }
     }
 };

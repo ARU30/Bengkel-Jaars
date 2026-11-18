@@ -6,10 +6,13 @@
 let memoryStore = null;
 
 // ID seed/dummy bawaan contoh demo yang TIDAK boleh disimpan atau disinkronkan ke transaksi riil
-const SEED_TRANSACTION_IDS = new Set(['INV-JAARS-001', 'INV-JAARS-002', 'INV-JAARS-003', 'INV-849201', 'INV-849188', 'INV-849150']);
 function isSeedTransaction(tx) {
     if (!tx) return false;
-    return SEED_TRANSACTION_IDS.has(tx.id) || SEED_TRANSACTION_IDS.has(tx.invoiceNo);
+    const id = String(tx.id || '');
+    const inv = String(tx.invoiceNo || '');
+    if (id.startsWith('INV-JAARS-')) return true;
+    if (/^INV-84[789]\d{3}$/.test(inv)) return true;
+    return false;
 }
 
 // Helper: Gabungkan daftar transaksi dari beberapa perangkat tanpa saling menimpa
@@ -217,9 +220,14 @@ module.exports = async function handler(req, res) {
                 });
             }
 
-            // Bersihkan data transaksi dari seed/dummy demo bawaan
+            // Bersihkan data transaksi dari seed/dummy demo bawaan & transaksi yang sudah dihapus
+            const deletedSet = new Set(Array.isArray(data.deletedTransactionIds) ? data.deletedTransactionIds : []);
             if (data && Array.isArray(data.transactions)) {
-                data.transactions = data.transactions.filter(tx => !isSeedTransaction(tx));
+                data.transactions = data.transactions.filter(tx => 
+                    !isSeedTransaction(tx) && 
+                    !deletedSet.has(tx.id) && 
+                    !deletedSet.has(tx.invoiceNo)
+                );
             }
 
             return res.status(200).json({
@@ -249,11 +257,16 @@ module.exports = async function handler(req, res) {
 
             const existingData = (await getData()) || {};
 
+            // Simpan dan gabungkan seluruh ID transaksi yang pernah dihapus agar tidak pernah muncul lagi
+            const existingDeleted = Array.isArray(existingData.deletedTransactionIds) ? existingData.deletedTransactionIds : [];
+            const incomingDeleted = Array.isArray(payload.deletedTransactionIds) ? payload.deletedTransactionIds : [];
+            const allDeletedIds = Array.from(new Set([...existingDeleted, ...incomingDeleted]));
+
             // Gabungkan data agar transaksi antar-device tidak saling menimpa
             const mergedTransactions = mergeTransactions(
                 existingData.transactions,
                 payload.transactions,
-                payload.deletedTransactionIds
+                allDeletedIds
             );
 
             const mergedVouchers = mergeVouchers(
@@ -274,6 +287,7 @@ module.exports = async function handler(req, res) {
                 services: (Array.isArray(payload.services) && payload.services.length > 0) ? payload.services : (existingData.services || []),
                 catalog: (Array.isArray(payload.catalog) && payload.catalog.length > 0) ? payload.catalog : (existingData.catalog || []),
                 transactions: mergedTransactions,
+                deletedTransactionIds: allDeletedIds,
                 freeWashVouchers: mergedVouchers,
                 loyaltyClearedVehicles: mergedClearedVehicles,
                 adminEmail: payload.adminEmail || existingData.adminEmail,
