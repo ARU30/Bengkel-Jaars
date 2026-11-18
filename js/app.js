@@ -98,6 +98,13 @@ function generateId(prefix = 'tx') {
     return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
 }
 
+// ID seed/contoh transaksi bawaan (JANGAN dipakai sebagai transaksi riil atau diunggah ke cloud)
+const SEED_TRANSACTION_IDS = new Set(['INV-JAARS-001', 'INV-JAARS-002', 'INV-JAARS-003', 'INV-849201', 'INV-849188', 'INV-849150']);
+function isSeedTransaction(tx) {
+    if (!tx) return false;
+    return SEED_TRANSACTION_IDS.has(tx.id) || SEED_TRANSACTION_IDS.has(tx.invoiceNo);
+}
+
 // --- LOCAL STORAGE MANAGER ---
 function loadData() {
     try {
@@ -110,27 +117,16 @@ function loadData() {
         const savedServices = localStorage.getItem('bengkel_services');
         state.services = savedServices ? JSON.parse(savedServices) : [ ...DEFAULT_SERVICES ];
 
-        const getSeedTransactions = () => {
-            if (typeof DEFAULT_TRANSACTIONS === 'undefined') return [];
-            const todayStr = new Date().toISOString().slice(0, 10);
-            return DEFAULT_TRANSACTIONS.map((tx, idx) => {
-                const cloned = JSON.parse(JSON.stringify(tx));
-                if (idx === 0) cloned.date = `${todayStr}T07:45:00.000Z`;
-                if (idx === 1) cloned.date = `${todayStr}T06:30:00.000Z`;
-                return cloned;
-            });
-        };
-
         const savedTransactions = localStorage.getItem('bengkel_transactions');
         if (savedTransactions) {
             try {
                 const parsed = JSON.parse(savedTransactions);
-                state.transactions = Array.isArray(parsed) && parsed.length > 0 ? parsed : getSeedTransactions();
+                state.transactions = Array.isArray(parsed) ? parsed.filter(tx => !isSeedTransaction(tx)) : [];
             } catch (e) {
-                state.transactions = getSeedTransactions();
+                state.transactions = [];
             }
         } else {
-            state.transactions = getSeedTransactions();
+            state.transactions = [];
         }
 
         const savedCatalog = localStorage.getItem('bengkel_catalog');
@@ -178,7 +174,7 @@ function loadData() {
         state.categories = [ ...DEFAULT_CATEGORIES ];
         state.services = [ ...DEFAULT_SERVICES ];
         state.catalog = [ ...DEFAULT_CATALOG ];
-        state.transactions = typeof DEFAULT_TRANSACTIONS !== 'undefined' ? [ ...DEFAULT_TRANSACTIONS ] : [];
+        state.transactions = [];
         state.freeWashVouchers = [];
         state.loyaltyClearedVehicles = [];
     }
@@ -202,19 +198,17 @@ function saveCatalog() {
 // Saluran sinkronisasi antar-tab lokal (BroadcastChannel)
 const syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('jaars_bengkel_sync') : null;
 
-function saveTransactions(options = { sync: true, label: 'Transaksi & Nota' }) {
+function saveTransactions(options = {}) {
     localStorage.setItem('bengkel_transactions', JSON.stringify(state.transactions));
     if (syncChannel) {
         try {
             syncChannel.postMessage({ type: 'TRANSACTIONS_UPDATED', timestamp: Date.now() });
         } catch (e) {}
     }
-    if (options && options.sync !== false && typeof triggerAutoSyncToCloud === 'function') {
-        triggerAutoSyncToCloud(options.label || 'Transaksi & Nota');
-    }
 }
 
 // Helper: Gabungkan daftar transaksi dari Cloud dengan data lokal (Multi-Device Merge)
+// Transaksi seed/contoh (INV-JAARS-*) TIDAK dihitung sebagai "baru"
 function mergeTransactionsClient(localList, incomingList) {
     const localMap = new Map();
     (localList || []).forEach(tx => {
@@ -225,10 +219,14 @@ function mergeTransactionsClient(localList, incomingList) {
 
     let changed = false;
     let newCount = 0;
+    const newInvoiceNos = [];
     const finalMap = new Map(localMap);
 
     (incomingList || []).forEach(inTx => {
         if (!inTx) return;
+        // Abaikan seed transactions dari cloud agar tidak muncul "random" di admin
+        if (isSeedTransaction(inTx)) return;
+
         const key = inTx.invoiceNo || inTx.id;
         if (!key) return;
 
@@ -238,6 +236,7 @@ function mergeTransactionsClient(localList, incomingList) {
             finalMap.set(key, inTx);
             changed = true;
             newCount++;
+            newInvoiceNos.push(inTx.invoiceNo || inTx.id);
         } else {
             // Transaksi sudah ada, periksa status validasi pembayaran (QRIS / Transfer)
             const isVerifiedLoc = locTx.paymentValidated === true || locTx.paymentStatus === 'verified';
@@ -264,6 +263,7 @@ function mergeTransactionsClient(localList, incomingList) {
     return {
         changed,
         newCount,
+        newInvoiceNos,
         transactions: mergedList
     };
 }
@@ -517,7 +517,8 @@ async function syncToCloud(triggerLabel = 'Konfigurasi', extraPayload = {}) {
         profile: state.profile,
         services: state.services,
         catalog: state.catalog,
-        transactions: state.transactions || [],
+        // Filter seed/contoh transaksi bawaan agar TIDAK ikut diunggah ke cloud
+        transactions: (state.transactions || []).filter(tx => !isSeedTransaction(tx)),
         freeWashVouchers: state.freeWashVouchers || [],
         loyaltyClearedVehicles: state.loyaltyClearedVehicles || [],
         adminEmail: state.adminEmail || DEFAULT_ADMIN.email,
@@ -3385,7 +3386,7 @@ function processCheckout() {
 
     // Save transaction
     state.transactions.unshift(transaction);
-    saveTransactions({ sync: true, label: isBookingMode ? `Booking Baru #${bookingCode}` : `Nota Kasir #${bookingCode}` });
+    saveTransactions(); // Simpan ke localStorage saja, TANPA auto-sync (sync langsung dilakukan di bawah)
 
     // Langsung sinkronkan transaksi baru ke Cloud Vercel seketika agar langsung terhubung ke sistem admin di semua device
     if (typeof syncToCloud === 'function') {
@@ -3405,8 +3406,11 @@ function processCheckout() {
     });
     if (typeof saveFreeWashVouchers === 'function') saveFreeWashVouchers();
 
-    // Tampilkan modal bukti booking / nota
-    openReceiptModal(transaction);
+    // Tampilkan modal nota struk HANYA jika diproses oleh kasir di mode Admin (untuk cetak thermal walk-in)
+    // Pada sistem booking pengguna, struk kasir TIDAK dimunculkan otomatis (langsung dialihkan ke WhatsApp Admin)
+    if (state.isAdmin) {
+        openReceiptModal(transaction);
+    }
 
     // Periksa pencapaian loyalitas cuci (jika transaksi memiliki layanan cuci)
     if (typeof hasWashService === 'function' && hasWashService(transaction)) {

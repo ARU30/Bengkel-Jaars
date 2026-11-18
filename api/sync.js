@@ -5,13 +5,20 @@
 
 let memoryStore = null;
 
+// ID seed/dummy bawaan contoh demo yang TIDAK boleh disimpan atau disinkronkan ke transaksi riil
+const SEED_TRANSACTION_IDS = new Set(['INV-JAARS-001', 'INV-JAARS-002', 'INV-JAARS-003', 'INV-849201', 'INV-849188', 'INV-849150']);
+function isSeedTransaction(tx) {
+    if (!tx) return false;
+    return SEED_TRANSACTION_IDS.has(tx.id) || SEED_TRANSACTION_IDS.has(tx.invoiceNo);
+}
+
 // Helper: Gabungkan daftar transaksi dari beberapa perangkat tanpa saling menimpa
 function mergeTransactions(existingList, incomingList, deletedIds = []) {
     const map = new Map();
     const deletedSet = new Set(deletedIds || []);
 
     (existingList || []).forEach(tx => {
-        if (!tx) return;
+        if (!tx || isSeedTransaction(tx)) return;
         const key = tx.invoiceNo || tx.id;
         if (key && !deletedSet.has(tx.id) && !deletedSet.has(tx.invoiceNo)) {
             map.set(key, tx);
@@ -19,7 +26,7 @@ function mergeTransactions(existingList, incomingList, deletedIds = []) {
     });
 
     (incomingList || []).forEach(tx => {
-        if (!tx) return;
+        if (!tx || isSeedTransaction(tx)) return;
         const key = tx.invoiceNo || tx.id;
         if (!key || deletedSet.has(tx.id) || deletedSet.has(tx.invoiceNo)) return;
 
@@ -208,6 +215,11 @@ module.exports = async function handler(req, res) {
                     kvConfigured: Boolean(KV_URL && KV_TOKEN),
                     data: null
                 });
+            }
+
+            // Bersihkan data transaksi dari seed/dummy demo bawaan
+            if (data && Array.isArray(data.transactions)) {
+                data.transactions = data.transactions.filter(tx => !isSeedTransaction(tx));
             }
 
             return res.status(200).json({
