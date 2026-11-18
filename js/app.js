@@ -23,8 +23,14 @@ let state = {
     discountType: 'nominal', // 'nominal' | 'percent'
     discountValue: 0,
     cashGiven: 0,
-    paymentMethod: 'cash', // 'cash' | 'qris' | 'transfer' | 'bon'
+    paymentMethod: 'qris', // 'qris' (default non-tunai user) | 'transfer' | 'cash' (admin only) | 'bon' (admin only)
     
+    // Ringkasan Pembayaran Khusus Hari Ini
+    summaryFilterPeriod: 'today', // Selalu 'today' untuk membedakan dengan Laporan & Riwayat
+    summaryFilterPayment: 'all', // 'all' | 'cash' | 'qris' | 'transfer' | 'bon'
+    summaryFilterVehicle: 'all', // 'all' | 'motor' | 'mobil'
+    summarySearchKeyword: '',
+
     // Active Tab View
     activeTab: 'pos', // 'pos' | 'prices' | 'history' | 'settings'
 
@@ -54,6 +60,8 @@ let state = {
     // Modals
     activeModal: null // 'customItem' | 'newService' | 'editService' | 'receipt' | 'editProfile'
 };
+
+const ADMIN_JAARS_PHONE = '085156696378';
 
 // --- HELPER FORMATTERS ---
 function formatRupiah(number) {
@@ -94,8 +102,28 @@ function loadData() {
         const savedServices = localStorage.getItem('bengkel_services');
         state.services = savedServices ? JSON.parse(savedServices) : [ ...DEFAULT_SERVICES ];
 
+        const getSeedTransactions = () => {
+            if (typeof DEFAULT_TRANSACTIONS === 'undefined') return [];
+            const todayStr = new Date().toISOString().slice(0, 10);
+            return DEFAULT_TRANSACTIONS.map((tx, idx) => {
+                const cloned = JSON.parse(JSON.stringify(tx));
+                if (idx === 0) cloned.date = `${todayStr}T07:45:00.000Z`;
+                if (idx === 1) cloned.date = `${todayStr}T06:30:00.000Z`;
+                return cloned;
+            });
+        };
+
         const savedTransactions = localStorage.getItem('bengkel_transactions');
-        state.transactions = savedTransactions ? JSON.parse(savedTransactions) : [];
+        if (savedTransactions) {
+            try {
+                const parsed = JSON.parse(savedTransactions);
+                state.transactions = Array.isArray(parsed) && parsed.length > 0 ? parsed : getSeedTransactions();
+            } catch (e) {
+                state.transactions = getSeedTransactions();
+            }
+        } else {
+            state.transactions = getSeedTransactions();
+        }
 
         const savedCatalog = localStorage.getItem('bengkel_catalog');
         state.catalog = savedCatalog ? JSON.parse(savedCatalog) : [ ...DEFAULT_CATALOG ];
@@ -118,7 +146,7 @@ function loadData() {
         state.categories = [ ...DEFAULT_CATEGORIES ];
         state.services = [ ...DEFAULT_SERVICES ];
         state.catalog = [ ...DEFAULT_CATALOG ];
-        state.transactions = [];
+        state.transactions = typeof DEFAULT_TRANSACTIONS !== 'undefined' ? [ ...DEFAULT_TRANSACTIONS ] : [];
     }
 }
 
@@ -651,6 +679,14 @@ function initUI() {
     // Payment Method Radio
     document.querySelectorAll('input[name="payment-method"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
+            if (!state.isAdmin && (e.target.value === 'cash' || e.target.value === 'bon')) {
+                state.paymentMethod = 'qris';
+                const qrisRadio = document.querySelector('input[name="payment-method"][value="qris"]');
+                if (qrisRadio) qrisRadio.checked = true;
+                renderPaymentSections();
+                renderCartTotalsOnly();
+                return;
+            }
             state.paymentMethod = e.target.value;
             renderPaymentSections();
             renderCartTotalsOnly();
@@ -961,6 +997,31 @@ function initUI() {
         if (catalogPlaceholder) catalogPlaceholder.classList.remove('hidden');
     });
 
+    // Ringkasan Pembayaran (Khusus Hari Ini) Filter & Search Listeners
+    const summaryPaySelect = document.getElementById('select-summary-payment');
+    if (summaryPaySelect) {
+        summaryPaySelect.addEventListener('change', (e) => {
+            state.summaryFilterPayment = e.target.value;
+            renderPaidServicesSummary();
+        });
+    }
+
+    const summaryVehSelect = document.getElementById('select-summary-vehicle');
+    if (summaryVehSelect) {
+        summaryVehSelect.addEventListener('change', (e) => {
+            state.summaryFilterVehicle = e.target.value;
+            renderPaidServicesSummary();
+        });
+    }
+
+    const summarySearchInput = document.getElementById('search-paid-services-input');
+    if (summarySearchInput) {
+        summarySearchInput.addEventListener('input', (e) => {
+            state.summarySearchKeyword = e.target.value;
+            renderPaidServicesSummary();
+        });
+    }
+
     // Initial check of admin visibility
     updateAdminUI();
 }
@@ -976,6 +1037,8 @@ function renderAll() {
     renderPaymentSections();
     renderInfoPanel();
     renderCatalogPanel();
+    renderPaidServicesSummary();
+    renderShopStatus();
 }
 
 // --- WORKSHOP HEADER & PROFILE ---
@@ -1006,6 +1069,7 @@ function renderProfileForm() {
     const fBankName = document.getElementById('settings-bank-name');
     const fBankAccount = document.getElementById('settings-bank-account');
     const fBankHolder = document.getElementById('settings-bank-holder');
+    const fClosedReason = document.getElementById('settings-closed-reason');
 
     if (fName) fName.value = state.profile.name || '';
     if (fTagline) fTagline.value = state.profile.tagline || '';
@@ -1013,6 +1077,7 @@ function renderProfileForm() {
     if (fEmail) fEmail.value = state.profile.email || DEFAULT_PROFILE.email || '';
     if (fAddress) fAddress.value = state.profile.address || '';
     if (fHours) fHours.value = state.profile.operatingHours || DEFAULT_PROFILE.operatingHours || '';
+    if (fClosedReason) fClosedReason.value = state.profile.closedReason || '';
     if (fFooter) fFooter.value = state.profile.receiptFooter || '';
     if (fBankName) fBankName.value = state.profile.bankName || DEFAULT_PROFILE.bankName;
     if (fBankAccount) fBankAccount.value = state.profile.bankAccount || DEFAULT_PROFILE.bankAccount;
@@ -1020,6 +1085,8 @@ function renderProfileForm() {
 
     const fAdminEmail = document.getElementById('settings-admin-email');
     if (fAdminEmail) fAdminEmail.value = state.adminEmail || DEFAULT_ADMIN.email;
+
+    renderShopStatus();
 }
 
 function handleSaveProfile(e) {
@@ -1032,6 +1099,7 @@ function handleSaveProfile(e) {
         email: document.getElementById('settings-email')?.value.trim() || DEFAULT_PROFILE.email,
         address: document.getElementById('settings-address').value.trim(),
         operatingHours: document.getElementById('settings-operating-hours')?.value.trim() || DEFAULT_PROFILE.operatingHours,
+        closedReason: document.getElementById('settings-closed-reason')?.value.trim() || (state.profile.closedReason || ''),
         receiptFooter: document.getElementById('settings-receipt-footer').value.trim(),
         bankName: document.getElementById('settings-bank-name')?.value.trim() || DEFAULT_PROFILE.bankName,
         bankAccount: document.getElementById('settings-bank-account')?.value.trim() || DEFAULT_PROFILE.bankAccount,
@@ -1041,6 +1109,7 @@ function handleSaveProfile(e) {
     renderWorkshopHeader();
     renderInfoPanel();
     renderPaymentSections();
+    renderShopStatus();
     showToast('Profil bengkel & data pembayaran berhasil disimpan!');
 }
 
@@ -1078,13 +1147,26 @@ function fallbackCopyText(text, label) {
 }
 
 function getOperatingStatus(operatingHoursStr) {
+    const profile = state.profile || DEFAULT_PROFILE;
+    
+    // Jika tombol Tutup Bengkel diaktifkan oleh admin
+    if (profile && profile.isStoreClosed) {
+        const reason = (profile.closedReason || 'Tutup Sementara').trim();
+        return {
+            isOpen: false,
+            isManualClosed: true,
+            badgeText: 'SEDANG TUTUP',
+            statusDesc: `Operasional bengkel sedang ditutup sementara (${reason}) • Hubungi WhatsApp 085156696378`
+        };
+    }
+
     const now = new Date();
     const currentHour = now.getHours();
     const currentMin = now.getMinutes();
     const currentTotalMin = currentHour * 60 + currentMin;
 
-    let openTotalMin = 8 * 60; // 08:00
-    let closeTotalMin = 21 * 60; // 21:00
+    let openTotalMin = 7 * 60 + 30; // 07:30
+    let closeTotalMin = 17 * 60; // 17:00
 
     if (operatingHoursStr) {
         const match = operatingHoursStr.match(/(\d{1,2})[.:](\d{2})\s*[-–]\s*(\d{1,2})[.:](\d{2})/);
@@ -1103,12 +1185,162 @@ function getOperatingStatus(operatingHoursStr) {
 
     return {
         isOpen,
+        isManualClosed: false,
         badgeText: isOpen ? 'BUKA SEKARANG' : 'SEDANG TUTUP',
         statusDesc: isOpen 
-            ? `Buka sampai pkl ${formatTimeStr(closeTotalMin)} WIB • Silakan datang langsung atau hubungi kami`
-            : `Buka kembali pkl ${formatTimeStr(openTotalMin)} WIB • Chat WhatsApp tetap dapat dikirim`
+            ? `Buka sampai pkl ${formatTimeStr(closeTotalMin)} WIB • Silakan datang langsung atau booking online`
+            : `Buka kembali pkl ${formatTimeStr(openTotalMin)} WIB • Booking online & Chat WhatsApp tetap dapat dikirim`
     };
 }
+
+// --- FUNGSI STATUS OPERASIONAL & TUTUP/BUKA BENGKEL ---
+function renderShopStatus() {
+    const profile = state.profile || DEFAULT_PROFILE;
+    const isClosed = Boolean(profile.isStoreClosed);
+    const closedReason = (profile.closedReason || 'Tutup Sementara').trim();
+
+    // 1. Status Bar Subheader
+    const headerStatus = document.getElementById('header-open-status');
+    const headerDot = document.getElementById('header-open-dot');
+    const userClosedPill = document.getElementById('user-closed-pill');
+    if (headerStatus && headerDot) {
+        if (isClosed) {
+            headerDot.className = 'w-2 h-2 rounded-full bg-rose-500 animate-pulse';
+            headerStatus.className = 'font-bold text-rose-400';
+            headerStatus.textContent = `🔴 BENGKEL SEDANG TUTUP ${closedReason ? `(${closedReason})` : ''}`;
+            if (userClosedPill) userClosedPill.classList.remove('hidden');
+        } else {
+            const opStatus = getOperatingStatus(profile.operatingHours);
+            headerDot.className = opStatus.isOpen ? 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse' : 'w-2 h-2 rounded-full bg-rose-500';
+            headerStatus.className = opStatus.isOpen ? 'font-semibold text-emerald-400' : 'font-semibold text-rose-400';
+            headerStatus.textContent = opStatus.isOpen ? 'Buka Sekarang' : 'Sedang Tutup';
+            if (userClosedPill) userClosedPill.classList.add('hidden');
+        }
+    }
+
+    // 2. Banner Tutup Bengkel di Form Booking Pengguna
+    const userBanner = document.getElementById('banner-user-shop-closed');
+    const reasonBadge = document.getElementById('closed-reason-badge');
+    if (userBanner) {
+        if (isClosed) {
+            userBanner.classList.remove('hidden');
+            if (reasonBadge) reasonBadge.textContent = closedReason;
+        } else {
+            userBanner.classList.add('hidden');
+        }
+    }
+
+    // 3. Tombol Navigasi Tutup/Buka Bengkel di Navbar Admin
+    const navToggleBtn = document.getElementById('btn-admin-nav-toggle-shop');
+    const navToggleIcon = document.getElementById('nav-shop-toggle-icon');
+    const navToggleLabel = document.getElementById('nav-shop-toggle-label');
+    if (navToggleBtn) {
+        if (isClosed) {
+            navToggleBtn.className = 'px-2.5 sm:px-3 py-1.5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 text-white text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs cursor-pointer animate-pulse';
+            navToggleBtn.title = 'Bengkel saat ini TUTUP. Klik untuk membuka kembali bengkel untuk pengguna.';
+            if (navToggleIcon) navToggleIcon.textContent = '🟢';
+            if (navToggleLabel) navToggleLabel.textContent = 'Buka Bengkel';
+        } else {
+            navToggleBtn.className = 'px-2.5 sm:px-3 py-1.5 sm:py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl flex items-center gap-1.5 transition-all shadow-xs cursor-pointer';
+            navToggleBtn.title = 'Bengkel saat ini BUKA. Klik untuk menutup bengkel & memunculkan status tutup ke pengguna.';
+            if (navToggleIcon) navToggleIcon.textContent = '🔴';
+            if (navToggleLabel) navToggleLabel.textContent = 'Tutup Bengkel';
+        }
+    }
+
+    // 4. Kartu Pengaturan Jam Operasional & Status Bengkel di Menu Admin (Settings)
+    const settingsBadge = document.getElementById('settings-shop-status-badge');
+    const settingsToggleBtn = document.getElementById('btn-settings-toggle-shop');
+    const settingsToggleIcon = document.getElementById('settings-toggle-icon');
+    const settingsToggleText = document.getElementById('settings-toggle-text');
+    const settingsClosedReason = document.getElementById('settings-closed-reason');
+
+    if (settingsBadge) {
+        if (isClosed) {
+            settingsBadge.innerHTML = `
+                <span class="px-2.5 py-1 text-xs font-bold bg-rose-100 text-rose-800 border border-rose-200 rounded-full flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                    <span>TUTUP SEMENTARA</span>
+                </span>
+            `;
+        } else {
+            settingsBadge.innerHTML = `
+                <span class="px-2.5 py-1 text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>BUKA MELAYANI</span>
+                </span>
+            `;
+        }
+    }
+
+    if (settingsToggleBtn) {
+        if (isClosed) {
+            settingsToggleBtn.className = 'px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer';
+            if (settingsToggleIcon) settingsToggleIcon.textContent = '🟢';
+            if (settingsToggleText) settingsToggleText.textContent = 'Buka Bengkel Kembali';
+        } else {
+            settingsToggleBtn.className = 'px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer';
+            if (settingsToggleIcon) settingsToggleIcon.textContent = '🔴';
+            if (settingsToggleText) settingsToggleText.textContent = 'Tutup Bengkel Sekarang';
+        }
+    }
+
+    if (settingsClosedReason && !settingsClosedReason.matches(':focus')) {
+        settingsClosedReason.value = profile.closedReason || '';
+    }
+
+    // 5. Kartu 4 & Hero di Panel Info
+    const infoClosedAlert = document.getElementById('info-closed-alert-box');
+    const infoClosedReasonText = document.getElementById('info-closed-reason-text');
+    if (infoClosedAlert) {
+        if (isClosed) {
+            infoClosedAlert.classList.remove('hidden');
+            if (infoClosedReasonText) {
+                infoClosedReasonText.textContent = `Operasional bengkel saat ini sedang ditutup sementara oleh admin (${closedReason}). Silakan hubungi WhatsApp 085156696378.`;
+            }
+        } else {
+            infoClosedAlert.classList.add('hidden');
+        }
+    }
+}
+
+function toggleShopStatus(source = 'nav') {
+    if (!state.isAdmin) {
+        openAdminLoginModal();
+        return;
+    }
+
+    const currentClosed = Boolean(state.profile.isStoreClosed);
+
+    if (!currentClosed) {
+        // Mau MENUTUP bengkel
+        const inputReason = prompt(
+            'TUTUP OPERASIONAL BENGKEL:\n\n' +
+            'Status tutup akan langsung ditampilkan ke seluruh pengguna/pelanggan di website.\n\n' +
+            'Masukkan keterangan/alasan tutup (opsional):',
+            state.profile.closedReason || 'Tutup Sementara'
+        );
+        if (inputReason === null) return; // Dibatalkan
+
+        state.profile.isStoreClosed = true;
+        state.profile.closedReason = inputReason.trim() || 'Tutup Sementara';
+        saveProfile();
+        renderShopStatus();
+        renderInfoPanel();
+        showToast('🔴 Bengkel berhasil DITUTUP. Status tutup kini tampil di sistem pengguna.');
+    } else {
+        // Mau MEMBUKA KEMBALI bengkel
+        if (!confirm('Buka kembali operasional bengkel untuk melayani pelanggan seperti biasa?')) {
+            return;
+        }
+        state.profile.isStoreClosed = false;
+        saveProfile();
+        renderShopStatus();
+        renderInfoPanel();
+        showToast('🟢 Bengkel berhasil DIBUKA kembali untuk pelanggan!');
+    }
+}
+window.toggleShopStatus = toggleShopStatus;
 
 // --- RENDER PANEL INFORMASI PENGGUNA (KONTAK, ALAMAT, EMAIL, JAM BUKA) ---
 function renderInfoPanel() {
@@ -1170,6 +1402,9 @@ function renderInfoPanel() {
             : 'text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded-full';
     }
 
+    // Sync all shop status elements
+    renderShopStatus();
+
     // Action Links
     const cleanPhone = formatWhatsAppNumber(phone);
     const waText = encodeURIComponent(`Halo ${name}, saya ingin bertanya mengenai layanan tambal ban / cuci kendaraan.`);
@@ -1203,12 +1438,19 @@ function renderPaymentSections() {
     const transferSection = document.getElementById('transfer-display-section');
     const bonSection = document.getElementById('bon-display-section');
 
-    const method = state.paymentMethod || 'cash';
+    // Jika bukan admin dan metode adalah cash atau bon, paksa ke QRIS atau Transfer
+    if (!state.isAdmin && (state.paymentMethod === 'cash' || state.paymentMethod === 'bon')) {
+        state.paymentMethod = 'qris';
+        const qrisRadio = document.querySelector('input[name="payment-method"][value="qris"]');
+        if (qrisRadio) qrisRadio.checked = true;
+    }
 
-    if (cashSection) cashSection.classList.toggle('hidden', method !== 'cash');
+    const method = state.paymentMethod || 'qris';
+
+    if (cashSection) cashSection.classList.toggle('hidden', method !== 'cash' || !state.isAdmin);
     if (qrisSection) qrisSection.classList.toggle('hidden', method !== 'qris');
     if (transferSection) transferSection.classList.toggle('hidden', method !== 'transfer');
-    if (bonSection) bonSection.classList.toggle('hidden', method !== 'bon');
+    if (bonSection) bonSection.classList.toggle('hidden', method !== 'bon' || !state.isAdmin);
 
     // Update Bank BRI Info di Kasir
     const bankAccountEl = document.getElementById('transfer-bank-account');
@@ -1561,9 +1803,9 @@ function renderCatalogProducts() {
                         </button>
                         <button type="button" onclick="event.stopPropagation(); addCatalogItemToCart('${escapeHtml(item.id)}')"
                             class="py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1 transition-all active:scale-95"
-                            title="Masukkan produk ini ke nota kasir saat ini">
-                            <span>🛒</span>
-                            <span class="hidden sm:inline">Kasir</span>
+                            title="${state.isAdmin ? 'Masukkan produk ini ke nota kasir saat ini' : 'Tambahkan produk ini ke form booking pelayanan'}">
+                            <span>${state.isAdmin ? '🛒' : '📅'}</span>
+                            <span class="hidden sm:inline">${state.isAdmin ? 'Kasir' : 'Booking'}</span>
                         </button>
                     </div>
 
@@ -1676,9 +1918,12 @@ function openCatalogDetailModal(itemId) {
         btnWa.onclick = () => inquireCatalogWhatsApp(itemId);
     }
 
-    // Tombol Kasir
+    // Tombol Kasir / Booking
     const btnCart = document.getElementById('detail-btn-cart');
     if (btnCart) {
+        btnCart.innerHTML = state.isAdmin 
+            ? '<span>🛒</span> <span>Masukkan ke Kasir (+ Kasir)</span>'
+            : '<span>📅</span> <span>Tambah ke Booking Pelayanan</span>';
         btnCart.onclick = () => {
             addCatalogItemToCart(itemId);
             closeModal();
@@ -1918,6 +2163,19 @@ function updateAdminUI() {
     const barLoggedIn = document.getElementById('admin-logged-in-bar');
     const catalogToolbar = document.getElementById('catalog-admin-toolbar');
     const btnCloudSync = document.getElementById('btn-cloud-sync-status');
+    const summaryAdminBadge = document.getElementById('summary-admin-badge');
+    const posHeaderStatusText = document.getElementById('pos-header-status-text');
+
+    const cashWrapper = document.getElementById('payment-method-cash-wrapper');
+    const bonWrapper = document.getElementById('payment-method-bon-wrapper');
+    const paymentGrid = document.getElementById('payment-methods-selector-grid');
+    const paymentModeBadge = document.getElementById('payment-method-mode-badge');
+    const navPosIcon = document.getElementById('nav-pos-icon');
+    const navPosLabel = document.getElementById('nav-pos-label');
+    const cartPanelTitle = document.getElementById('cart-panel-title');
+    const cartPanelDesc = document.getElementById('cart-panel-desc');
+    const btnCheckoutIcon = document.getElementById('btn-checkout-icon');
+    const btnCheckoutText = document.getElementById('btn-checkout-text');
 
     if (state.isAdmin) {
         if (navGroup) {
@@ -1934,6 +2192,26 @@ function updateAdminUI() {
             btnCloudSync.classList.remove('hidden');
             btnCloudSync.classList.add('flex');
         }
+        if (summaryAdminBadge) summaryAdminBadge.classList.remove('hidden');
+        if (posHeaderStatusText) posHeaderStatusText.textContent = 'Mode Admin: Kasir & Booking Pelayanan Aktif';
+
+        // Tampilkan Metode Tunai & Bon Khusus Admin
+        if (cashWrapper) cashWrapper.classList.remove('hidden');
+        if (bonWrapper) bonWrapper.classList.remove('hidden');
+        if (paymentGrid) {
+            paymentGrid.classList.remove('grid-cols-2');
+            paymentGrid.classList.add('grid-cols-4');
+        }
+        if (paymentModeBadge) {
+            paymentModeBadge.textContent = 'Admin: Semua Metode (Tunai, QRIS, BRI, Bon)';
+            paymentModeBadge.className = 'text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-full';
+        }
+        if (navPosIcon) navPosIcon.textContent = '📅';
+        if (navPosLabel) navPosLabel.innerHTML = '<span class="hidden md:inline">Booking</span> Pelayanan';
+        if (cartPanelTitle) cartPanelTitle.textContent = '🧮 Nota Kasir & Booking';
+        if (cartPanelDesc) cartPanelDesc.textContent = 'Mode kasir admin: input pesanan, pembayaran tunai/non-tunai & cetak nota';
+        if (btnCheckoutIcon) btnCheckoutIcon.textContent = '🧾';
+        if (btnCheckoutText) btnCheckoutText.textContent = 'Selesaikan & Cetak Struk';
     } else {
         if (navGroup) {
             navGroup.classList.add('hidden');
@@ -1949,14 +2227,50 @@ function updateAdminUI() {
             btnCloudSync.classList.add('hidden');
             btnCloudSync.classList.remove('flex');
         }
+        if (summaryAdminBadge) summaryAdminBadge.classList.add('hidden');
+        if (posHeaderStatusText) posHeaderStatusText.textContent = 'Booking Pelayanan Online Bengkel JAARS';
 
-        // Jika sedang berada di tab admin saat logout, kembalikan ke tab pos (kasir)
+        // Hapus & Sembunyikan Pembayaran Uang Tunai & Bon di Sistem Pengguna/User
+        if (cashWrapper) cashWrapper.classList.add('hidden');
+        if (bonWrapper) bonWrapper.classList.add('hidden');
+        if (paymentGrid) {
+            paymentGrid.classList.remove('grid-cols-4');
+            paymentGrid.classList.add('grid-cols-2');
+        }
+        if (paymentModeBadge) {
+            paymentModeBadge.textContent = 'Non-Tunai (QRIS & Transfer BRI)';
+            paymentModeBadge.className = 'text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-full';
+        }
+        if (navPosIcon) navPosIcon.textContent = '📅';
+        if (navPosLabel) navPosLabel.innerHTML = '<span class="hidden md:inline">Booking</span> Pelayanan';
+        if (cartPanelTitle) cartPanelTitle.textContent = '📅 Form Booking Pelayanan';
+        if (cartPanelDesc) cartPanelDesc.textContent = 'Pilih layanan bengkel & lakukan pembayaran digital non-tunai';
+        if (btnCheckoutIcon) btnCheckoutIcon.textContent = '📅';
+        if (btnCheckoutText) btnCheckoutText.textContent = 'Konfirmasi Booking Pelayanan';
+
+        // Jika sebelumnya metode adalah cash atau bon, otomatis ubah ke QRIS
+        if (state.paymentMethod === 'cash' || state.paymentMethod === 'bon') {
+            state.paymentMethod = 'qris';
+        }
+        const qrisRadio = document.querySelector('input[name="payment-method"][value="qris"]');
+        const transferRadio = document.querySelector('input[name="payment-method"][value="transfer"]');
+        if (state.paymentMethod === 'transfer' && transferRadio) {
+            transferRadio.checked = true;
+        } else if (qrisRadio) {
+            qrisRadio.checked = true;
+        }
+
+        // Jika sedang berada di tab admin saat logout, kembalikan ke tab pos (booking)
         if (state.activeTab !== 'pos' && state.activeTab !== 'catalog' && state.activeTab !== 'info') {
             switchTab('pos');
         }
     }
 
+    renderShopStatus();
+
+    renderPaymentSections();
     renderCatalogProducts();
+    renderPaidServicesSummary();
 }
 
 function openAdminLoginModal() {
@@ -2001,6 +2315,7 @@ function handleAdminLoginSubmit(e) {
         sessionStorage.setItem('bengkel_is_admin', 'true');
         closeModal();
         updateAdminUI();
+        switchTab('summary');
         showToast('Login berhasil! Selamat datang Admin.');
     } else {
         if (errorMsg) {
@@ -2090,7 +2405,12 @@ function switchTab(tabId) {
     const activeSection = document.getElementById(`panel-${tabId}`);
     if (activeSection) activeSection.classList.remove('hidden');
 
-    if (tabId === 'prices') {
+    if (tabId === 'pos') {
+        renderCart();
+        renderCatalog();
+    } else if (tabId === 'summary') {
+        renderPaidServicesSummary();
+    } else if (tabId === 'prices') {
         renderPricesTable();
     } else if (tabId === 'history') {
         renderHistory();
@@ -2696,7 +3016,14 @@ function importDataJSON(e) {
 // --- CHECKOUT & RECEIPT ENGINE ---
 function processCheckout() {
     if (state.cart.length === 0) {
-        alert('Daftar belanja masih kosong! Pilih layanan atau barang terlebih dahulu.');
+        alert('Daftar layanan / barang masih kosong! Pilih minimal 1 layanan bengkel atau produk terlebih dahulu.');
+        return;
+    }
+
+    if (!state.isAdmin && state.paymentMethod === 'cash') {
+        alert('Pembayaran uang tunai hanya dapat dilakukan langsung di kasir oleh admin bengkel. Untuk booking online, silakan gunakan pembayaran non-tunai (QRIS atau Transfer Bank BRI).');
+        state.paymentMethod = 'qris';
+        renderPaymentSections();
         return;
     }
 
@@ -2708,11 +3035,14 @@ function processCheckout() {
         }
     }
 
+    const isBookingMode = !state.isAdmin;
+    const bookingCode = `INV-${Date.now().toString().slice(-6)}`;
+
     const transaction = {
         id: generateId('INV'),
-        invoiceNo: `INV-${Date.now().toString().slice(-6)}`,
+        invoiceNo: bookingCode,
         date: new Date().toISOString(),
-        customerName: state.customerName || 'Pelanggan Umum',
+        customerName: state.customerName || (isBookingMode ? 'Pelanggan Booking Online' : 'Pelanggan Umum'),
         customerPhone: state.customerPhone || '',
         plateNumber: state.plateNumber || '-',
         vehicleType: state.selectedVehicle,
@@ -2725,15 +3055,24 @@ function processCheckout() {
         total: totals.total,
         cash: state.paymentMethod === 'cash' ? totals.cash : totals.total,
         change: state.paymentMethod === 'cash' ? totals.change : 0,
-        paymentMethod: state.paymentMethod
+        paymentMethod: state.paymentMethod,
+        isBooking: isBookingMode
     };
 
     // Save transaction
     state.transactions.unshift(transaction);
     saveTransactions();
 
-    // Show Receipt Modal
+    // Tampilkan modal bukti booking / nota
     openReceiptModal(transaction);
+
+    // Pada sistem pengguna, langsung kirimkan kode booking ke WhatsApp Admin 085156696378
+    if (isBookingMode) {
+        sendReceiptWhatsApp(transaction, ADMIN_JAARS_PHONE);
+        showToast(`🎉 Booking #${bookingCode} berhasil dibuat & langsung dikirim ke WhatsApp Admin (085156696378)!`);
+    } else {
+        showToast('🧾 Transaksi kasir berhasil diproses!');
+    }
 
     // Reset current active cart
     state.cart = [];
@@ -2761,6 +3100,7 @@ function processCheckout() {
     renderCart();
     renderCatalog();
     renderHistory();
+    renderPaidServicesSummary();
 }
 
 function openReceiptModal(tx) {
@@ -2768,26 +3108,73 @@ function openReceiptModal(tx) {
     const receiptContent = document.getElementById('receipt-print-area');
     if (!modal || !receiptContent) return;
 
-    receiptContent.innerHTML = generateReceiptHTML(tx);
-    
-    // Fill WhatsApp phone input in modal
+    const isBooking = (!state.isAdmin || tx.isBooking);
+
+    // Update modal title, description, label & badge dynamically
+    const modalTitle = document.getElementById('modal-receipt-title');
+    const waLabel = document.getElementById('modal-receipt-wa-label');
+    const waBadge = document.getElementById('modal-receipt-wa-badge');
+    const waDesc = document.getElementById('modal-receipt-wa-desc');
     const waInput = document.getElementById('modal-wa-phone');
+    const waBtn = document.getElementById('btn-send-whatsapp');
+
+    if (modalTitle) {
+        if (isBooking) {
+            modalTitle.innerHTML = '<span>📅</span> <span>Bukti Booking Pelayanan Berhasil Dibuat</span>';
+        } else {
+            modalTitle.innerHTML = '<span>🧾</span> <span>Nota & Transaksi Kasir Selesai Diproses</span>';
+        }
+    }
+    if (waLabel) {
+        waLabel.textContent = isBooking 
+            ? 'Kirim Ulang Kode Booking ke WhatsApp Admin:' 
+            : 'Kirim Nota Kasir ke WhatsApp Pelanggan:';
+    }
+    if (waBadge) {
+        if (isBooking) {
+            waBadge.textContent = '🔒 Nomor Admin (Terkunci)';
+            waBadge.className = 'text-[10px] text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded-full';
+        } else {
+            waBadge.textContent = 'Bisa diedit';
+            waBadge.className = 'text-[10px] text-emerald-700 font-medium';
+        }
+    }
+    if (waDesc) {
+        waDesc.textContent = isBooking 
+            ? `Pesan WhatsApp otomatis dikirimkan ke WhatsApp resmi Admin JAARS Garage (${ADMIN_JAARS_PHONE}) dengan Kode Booking #${tx.invoiceNo}.`
+            : 'Membuka WhatsApp & menyiapkan pesan nota biaya lengkap ke nomor pelanggan.';
+    }
+
+    // Nomor Tujuan WhatsApp:
+    // Pada mode pengguna/booking, otomatis terkunci ke Admin JAARS (085156696378) tanpa bisa diedit pengguna
     if (waInput) {
-        waInput.value = tx.customerPhone || '';
+        if (isBooking) {
+            waInput.value = ADMIN_JAARS_PHONE;
+            waInput.readOnly = true;
+            waInput.className = 'w-full pl-8 pr-2.5 py-2 text-xs font-bold bg-slate-100 border border-slate-300 rounded-xl focus:outline-none text-slate-700 cursor-not-allowed select-none';
+            waInput.title = 'Nomor tujuan dikunci ke nomor resmi Admin JAARS Garage';
+        } else {
+            waInput.value = tx.customerPhone || '';
+            waInput.readOnly = false;
+            waInput.className = 'w-full pl-8 pr-2.5 py-2 text-xs font-bold bg-white border border-emerald-300 rounded-xl focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 text-slate-800 cursor-text';
+            waInput.placeholder = 'Contoh: 08123456789';
+            waInput.title = 'Nomor WhatsApp pelanggan penerima struk';
+        }
     }
 
     // Setup WhatsApp button
-    const waBtn = document.getElementById('btn-send-whatsapp');
     if (waBtn) {
+        waBtn.innerHTML = isBooking 
+            ? '<span>Kirim Ulang ke WA Admin</span> <span>➔</span>' 
+            : '<span>Kirim WA</span> <span>➔</span>';
         waBtn.onclick = () => {
-            const destPhone = waInput ? waInput.value.trim() : (tx.customerPhone || '');
-            if (destPhone) {
-                tx.customerPhone = destPhone;
-                saveTransactions();
-            }
+            // Pada mode booking, SELALU kirim ke ADMIN_JAARS_PHONE tanpa bisa diubah pengguna
+            const destPhone = isBooking ? ADMIN_JAARS_PHONE : (waInput && waInput.value.trim() ? waInput.value.trim() : (tx.customerPhone || ''));
             sendReceiptWhatsApp(tx, destPhone);
         };
     }
+
+    receiptContent.innerHTML = generateReceiptHTML(tx);
 
     // Setup Print button
     const printBtn = document.getElementById('btn-print-receipt');
@@ -2813,6 +3200,11 @@ function generateReceiptHTML(tx) {
                          tx.paymentMethod === 'qris' ? 'QRIS' :
                          tx.paymentMethod === 'transfer' ? `TRANSFER BANK BRI (${state.profile.bankAccount || '-'} a.n ${state.profile.bankHolder || '-'})` : 'BON / HUTANG';
 
+    const isBooking = (!state.isAdmin || tx.isBooking);
+    const bookingBadge = isBooking 
+        ? `<div style="text-align: center; margin: 6px 0; font-size: 11px; font-weight: 800; background: #eff6ff; color: #1d4ed8; padding: 4px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px dashed #93c5fd;">📅 Bukti Booking Pelayanan Online</div>` 
+        : '';
+
     return `
         <div class="thermal-receipt p-6 bg-white border border-slate-200 rounded-xl max-w-sm mx-auto shadow-sm">
             <div style="text-align: center; margin-bottom: 12px;">
@@ -2829,6 +3221,15 @@ function generateReceiptHTML(tx) {
                     WA/Telp: ${state.profile.phone || '-'}
                 </p>
             </div>
+
+            ${bookingBadge}
+
+            ${isBooking ? `
+                <div style="margin: 6px 0 10px 0; padding: 6px 8px; background: #eff6ff; border: 1.5px dashed #2563eb; border-radius: 8px; text-align: center;">
+                    <span style="font-size: 10px; font-weight: bold; color: #1e40af; text-transform: uppercase; display: block; letter-spacing: 0.5px;">KODE BOOKING RESMI</span>
+                    <span style="font-size: 16px; font-weight: 900; color: #1d4ed8; letter-spacing: 1px; font-family: monospace;">#${tx.invoiceNo}</span>
+                </div>
+            ` : ''}
 
             <div class="receipt-dashed-line"></div>
 
@@ -2876,7 +3277,7 @@ function generateReceiptHTML(tx) {
                         <span>-${formatRupiah(tx.discountAmount)}</span>
                     </div>
                 ` : ''}
-                <div style="display: flex; justify-content: space-between; font-weight: 800; font-size: 14px; margin-top: 4px; border-top: 1px dashed #9ca3af; padding-top: 4px;">
+                <div style="display: flex; justify-content: space-between; font-weight: 800; font-size: 14px; margin-top: 4px; border-top: 1px dashed #93c5fd; padding-top: 4px;">
                     <span>TOTAL BAYAR:</span>
                     <span>${formatRupiah(tx.total)}</span>
                 </div>
@@ -2922,7 +3323,9 @@ function formatWhatsAppNumber(phone) {
 }
 
 function sendReceiptWhatsApp(tx, targetPhone) {
-    let phone = targetPhone !== undefined ? targetPhone : (tx.customerPhone || '');
+    const isBooking = (!state.isAdmin || tx.isBooking);
+    // Untuk mode booking pengguna, nomor tujuan selalu terkunci ke WhatsApp Admin JAARS (085156696378)
+    let phone = isBooking ? ADMIN_JAARS_PHONE : (targetPhone !== undefined ? targetPhone : (tx.customerPhone || ''));
     let cleanPhone = formatWhatsAppNumber(phone);
 
     let itemsText = tx.items.map((it, idx) => 
@@ -2933,7 +3336,31 @@ function sendReceiptWhatsApp(tx, targetPhone) {
                          tx.paymentMethod === 'qris' ? 'QRIS' :
                          tx.paymentMethod === 'transfer' ? `TRANSFER BANK BRI (${state.profile.bankAccount || '-'} a.n ${state.profile.bankHolder || '-'})` : 'BON / HUTANG';
 
-    let waMessage = 
+    let waMessage = '';
+    if (isBooking) {
+        waMessage = 
+`*📅 KONFIRMASI BOOKING PELAYANAN BENGKEL*
+*KODE BOOKING: #${tx.invoiceNo}*
+==============================
+*Bengkel:* ${state.profile.name.toUpperCase()}
+*Waktu Pemesanan:* ${formatDate(tx.date)}
+==============================
+*👤 DATA PEMESAN:*
+• *Nama Pelanggan:* ${tx.customerName || 'Pelanggan Online'}
+• *Nomor WhatsApp Pemesan:* ${tx.customerPhone || '-'}
+• *Kendaraan:* ${tx.vehicleType.toUpperCase()} ${tx.plateNumber ? `(${tx.plateNumber})` : ''}
+${tx.orderNote && tx.orderNote !== '-' ? `• *Rencana Datang / Catatan:* ${tx.orderNote}\n` : ''}
+*📋 RINCIAN LAYANAN & ESTIMASI BIAYA:*
+${itemsText}
+==============================
+*Subtotal:* ${formatRupiah(tx.subtotal)}
+${tx.discountAmount > 0 ? `*Diskon:* -${formatRupiah(tx.discountAmount)}\n` : ''}*TOTAL ESTIMASI:* ${formatRupiah(tx.total)}
+*Metode Pembayaran:* ${paymentLabel}
+==============================
+_Halo Admin JAARS Garage, saya telah memesan booking pelayanan di atas melalui website dengan *KODE BOOKING: #${tx.invoiceNo}*. Mohon konfirmasi jadwal dan teknisi bengkel. Terima kasih!_
+`;
+    } else {
+        waMessage = 
 `*🧾 NOTA BENGKEL - ${state.profile.name.toUpperCase()}*
 ${state.profile.tagline ? `_${state.profile.tagline}_\n` : ''}${state.profile.address ? `📍 ${state.profile.address}\n` : ''}${state.profile.phone ? `📞 Kontak Bengkel: ${state.profile.phone}\n` : ''}
 ==============================
@@ -2952,6 +3379,7 @@ ${tx.paymentMethod === 'cash' ? `*Bayar*    : ${formatRupiah(tx.cash)}\n*Kembali
 ==============================
 _${state.profile.receiptFooter || 'Terima kasih atas kunjungan Anda. Utamakan keselamatan berkendara!'}_
 `;
+    }
 
     const encoded = encodeURIComponent(waMessage);
     const waUrl = cleanPhone 
@@ -3023,6 +3451,764 @@ function getFilteredTransactions() {
         return true;
     });
 }
+
+// --- KOMPONEN KARTU HASIL LAYANAN DETAIL YANG SUDAH DIBAYAR ---
+function generatePaidServicesCardHTML(tx) {
+    const isMotor = tx.vehicleType === 'motor';
+    const vehicleBadge = isMotor 
+        ? '<span class="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">🛵 Motor</span>' 
+        : '<span class="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">🚗 Mobil</span>';
+
+    const isBon = tx.paymentMethod === 'bon';
+    const statusBadge = isBon
+        ? '<span class="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">⚠️ BELUM LUNAS (BON)</span>'
+        : '<span class="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">✅ LUNAS / SUDAH DIBAYAR</span>';
+
+    const payBadge = tx.paymentMethod === 'cash' ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">💵 Tunai (Cash)</span>' :
+                     tx.paymentMethod === 'qris' ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">📱 QRIS Kasir</span>' :
+                     tx.paymentMethod === 'transfer' ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200">🏦 Transfer BRI</span>' :
+                     '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">📝 Bon / Hutang</span>';
+
+    const items = tx.items || [];
+    const itemsRowsHTML = items.map((item, itemIdx) => {
+        const categoryObj = (state.categories || []).find(c => c.id === item.categoryId);
+        const categoryName = categoryObj ? categoryObj.name : (item.categoryId || 'Layanan / Produk');
+        const unitPrice = Number(item.price) || 0;
+        const qty = Number(item.qty) || 1;
+        const subtotal = unitPrice * qty;
+
+        return `
+            <tr class="hover:bg-blue-50/40 transition-colors">
+                <td class="px-3 py-2 text-center text-slate-400 font-mono text-[11px]">${itemIdx + 1}</td>
+                <td class="px-3 py-2">
+                    <div class="font-bold text-slate-800">${item.name}</div>
+                    ${item.desc ? `<div class="text-[10px] text-slate-400 font-normal leading-tight">${item.desc}</div>` : ''}
+                </td>
+                <td class="px-3 py-2">
+                    <span class="text-[10px] bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md text-slate-600 font-medium">
+                        ${categoryName}
+                    </span>
+                </td>
+                <td class="px-3 py-2 text-center font-bold font-mono text-slate-700">
+                    ${qty} <span class="text-[10px] font-normal text-slate-400">${item.unit || 'x'}</span>
+                </td>
+                <td class="px-3 py-2 text-right font-mono text-slate-600">${formatRupiah(unitPrice)}</td>
+                <td class="px-3 py-2 text-right font-mono font-bold text-slate-900">${formatRupiah(subtotal)}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const cleanPhone = (tx.customerPhone || '').replace(/\D/g, '');
+
+    return `
+        <div class="bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:border-slate-300 transition-all p-4 sm:p-5 flex flex-col gap-3.5">
+            
+            <!-- TOP HEADER: INVOICE, TIME, VEHICLE, STATUS, PAYMENT -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-mono text-xs font-black text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">${tx.invoiceNo}</span>
+                    ${vehicleBadge}
+                    ${payBadge}
+                    ${statusBadge}
+                </div>
+                <div class="text-xs text-slate-400 font-medium flex items-center gap-1">
+                    <span>🕒</span>
+                    <span>${formatDate(tx.date)}</span>
+                </div>
+            </div>
+
+            <!-- CUSTOMER, PLATE & WORK ORDER INFO -->
+            <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200/70 text-xs">
+                <div class="flex items-center gap-3 flex-wrap">
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-slate-400">Plat Nomor:</span>
+                        <span class="font-mono font-black text-slate-900 bg-white px-2 py-0.5 rounded-lg border border-slate-200 tracking-wider">${tx.plateNumber || '-'}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-slate-400">Pelanggan:</span>
+                        <span class="font-bold text-slate-800">${tx.customerName || 'Pelanggan Umum'}</span>
+                    </div>
+                    ${tx.customerPhone ? `
+                        <a href="https://wa.me/${cleanPhone.startsWith('0') ? '62' + cleanPhone.slice(1) : cleanPhone}" target="_blank"
+                            class="text-emerald-700 bg-white hover:bg-emerald-50 px-2 py-0.5 rounded-md font-mono font-bold border border-emerald-200 flex items-center gap-1 transition-all"
+                            title="Klik untuk chat WhatsApp pelanggan">
+                            <span>📱</span>
+                            <span>${tx.customerPhone}</span>
+                        </a>
+                    ` : ''}
+                </div>
+
+                ${tx.orderNote && tx.orderNote !== '-' ? `
+                    <div class="text-[11px] text-slate-600 bg-white px-2.5 py-1 rounded-lg border border-slate-200/80 flex items-center gap-1.5">
+                        <span class="text-amber-500">📝</span>
+                        <span class="font-medium">Catatan: <span class="italic text-slate-700">${tx.orderNote}</span></span>
+                    </div>
+                ` : ''}
+            </div>
+
+            <!-- TABEL HASIL LAYANAN DETAIL YANG SUDAH DIBAYAR -->
+            <div class="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/40">
+                <table class="w-full text-xs text-left">
+                    <thead class="bg-slate-100/90 text-slate-600 font-bold uppercase text-[10px] border-b border-slate-200">
+                        <tr>
+                            <th class="px-3 py-2 text-center w-8">#</th>
+                            <th class="px-3 py-2">Layanan / Produk yang Selesai Dikerjakan</th>
+                            <th class="px-3 py-2">Kategori</th>
+                            <th class="px-3 py-2 text-center">Jumlah</th>
+                            <th class="px-3 py-2 text-right">Tarif Satuan</th>
+                            <th class="px-3 py-2 text-right">Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200/60 font-medium bg-white">
+                        ${itemsRowsHTML}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- BOTTOM TOTALS & ACTION BUTTONS -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+                <div class="flex items-center gap-3 flex-wrap text-xs">
+                    <div>
+                        <span class="text-slate-400 text-[10px] block font-semibold">Subtotal Layanan:</span>
+                        <span class="font-bold text-slate-700 font-mono">${formatRupiah(tx.subtotal)}</span>
+                    </div>
+                    ${tx.discountAmount > 0 ? `
+                        <div>
+                            <span class="text-rose-400 text-[10px] block font-semibold">Potongan Diskon:</span>
+                            <span class="font-bold text-rose-600 font-mono">-${formatRupiah(tx.discountAmount)}</span>
+                        </div>
+                    ` : ''}
+                    <div class="pl-2 border-l border-slate-200">
+                        <span class="text-[10px] text-slate-400 block font-bold uppercase">TOTAL SUDAH DIBAYAR:</span>
+                        <span class="text-lg font-black text-blue-600 font-mono">${formatRupiah(tx.total)}</span>
+                    </div>
+                    ${tx.paymentMethod === 'cash' && tx.cash ? `
+                        <div class="text-[11px] text-slate-500 pl-2 border-l border-slate-200 font-mono">
+                            <span>Tunai: ${formatRupiah(tx.cash)}</span>
+                            <span class="text-emerald-700 font-bold ml-1">(Kembalian: ${formatRupiah(tx.change || 0)})</span>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <div class="flex items-center gap-1.5 justify-end">
+                    <button onclick="sendDirectWhatsApp('${tx.id}')"
+                        class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1 active:scale-95"
+                        title="Kirim Nota via WhatsApp">
+                        <span>💬</span>
+                        <span>Kirim WA</span>
+                    </button>
+                    <button onclick="viewHistoryReceipt('${tx.id}')"
+                        class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1"
+                        title="Buka Nota Kasir">
+                        <span>👁️</span>
+                        <span>Lihat Nota</span>
+                    </button>
+                    <button onclick="printTransactionDirect('${tx.id}')"
+                        class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1 shadow-xs active:scale-95"
+                        title="Cetak Struk Thermal / Kertas">
+                        <span>🖨️</span>
+                        <span>Cetak</span>
+                    </button>
+                    ${state.isAdmin ? `
+                        <button onclick="deleteTransaction('${tx.id}')"
+                            class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-1" title="Hapus transaksi dari riwayat">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+
+        </div>
+    `;
+}
+
+// --- RENDER RINGKASAN PEMBAYARAN LAYANAN HARI INI ---
+function renderPaidServicesSummary() {
+    const container = document.getElementById('paid-services-detail-container');
+    const servicesTableBody = document.getElementById('summary-services-table-body');
+    const servicesTableFoot = document.getElementById('summary-services-table-foot');
+    const totalOmsetEl = document.getElementById('summary-stat-total-omset');
+    const totalTxEl = document.getElementById('summary-stat-total-tx');
+    const totalServicesEl = document.getElementById('summary-stat-total-services-count');
+    const discountEl = document.getElementById('summary-stat-discount');
+    const paidCountBadge = document.getElementById('paid-services-count-badge');
+    const uniqueServicesBadge = document.getElementById('summary-unique-services-badge');
+    const periodDescEl = document.getElementById('paid-services-period-desc');
+    const bannerDateEl = document.getElementById('summary-banner-date');
+    const filterTodayText = document.getElementById('summary-filter-today-text');
+    const methodsGrid = document.getElementById('summary-payment-methods-grid');
+
+    if (!container) return;
+
+    const now = new Date();
+    const dateFormattedLong = now.toLocaleDateString('id-ID', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    });
+    const dateFormattedShort = now.toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+    });
+
+    if (bannerDateEl) bannerDateEl.textContent = dateFormattedLong;
+    if (filterTodayText) filterTodayText.textContent = `Hari Ini (${dateFormattedShort})`;
+
+    // Helper untuk cek apakah tanggal transaksi adalah Hari Ini
+    const isTxToday = (tx) => {
+        if (!tx.date) return false;
+        const txDate = new Date(tx.date);
+        if (isNaN(txDate.getTime())) return false;
+        return txDate.getDate() === now.getDate() &&
+               txDate.getMonth() === now.getMonth() &&
+               txDate.getFullYear() === now.getFullYear();
+    };
+
+    // 1. Ambil seluruh transaksi hari ini
+    const allTodayTx = (state.transactions || []).filter(isTxToday);
+
+    // 2. Agregasi Rincian Pembayaran Per Setiap Layanan Hari Ini
+    const serviceMap = {};
+    let totalServicesQtyToday = 0;
+    let totalServicesRevenueToday = 0;
+
+    allTodayTx.forEach(tx => {
+        (tx.items || []).forEach(item => {
+            const key = item.id || item.name;
+            if (!serviceMap[key]) {
+                serviceMap[key] = {
+                    id: item.id || key,
+                    name: item.name,
+                    category: item.categoryId || item.category || 'jasa',
+                    vehicle: tx.vehicleType || 'motor',
+                    unit: item.unit || 'unit',
+                    price: Number(item.price) || 0,
+                    qty: 0,
+                    revenue: 0,
+                    txCount: 0,
+                    methods: { cash: 0, qris: 0, transfer: 0, bon: 0 }
+                };
+            }
+            const qty = Number(item.qty) || 1;
+            const sub = (Number(item.price) || 0) * qty;
+            serviceMap[key].qty += qty;
+            serviceMap[key].revenue += sub;
+            serviceMap[key].txCount += 1;
+            totalServicesQtyToday += qty;
+            totalServicesRevenueToday += sub;
+
+            const m = tx.paymentMethod || 'cash';
+            if (serviceMap[key].methods[m] !== undefined) {
+                serviceMap[key].methods[m] += sub;
+            }
+        });
+    });
+
+    const aggregatedServices = Object.values(serviceMap).sort((a, b) => b.revenue - a.revenue);
+
+    // Render Tabel Rekapitulasi Per Layanan Hari Ini
+    if (servicesTableBody) {
+        if (aggregatedServices.length === 0) {
+            servicesTableBody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="py-8 text-center text-slate-400 bg-slate-50/50">
+                        <span class="text-2xl block mb-1">🛠️</span>
+                        <span class="font-bold text-slate-600">Belum ada layanan yang selesai atau dibayar pada hari ini (${dateFormattedShort})</span>
+                        <p class="text-[11px] text-slate-400 mt-0.5">Selesaikan transaksi di kasir untuk melihat rincian pembayaran per layanan.</p>
+                    </td>
+                </tr>
+            `;
+            if (servicesTableFoot) servicesTableFoot.innerHTML = '';
+        } else {
+            servicesTableBody.innerHTML = aggregatedServices.map((svc, idx) => {
+                const categoryObj = (state.categories || DEFAULT_CATEGORIES).find(c => c.id === svc.category);
+                const categoryName = categoryObj ? categoryObj.name : (svc.category === 'oli-motor' ? 'Oli Motor' : (svc.category === 'oli-mobil' ? 'Oli Mobil' : svc.category));
+                const vehIcon = svc.vehicle === 'mobil' ? '🚗' : '🛵';
+                const vehLabel = svc.vehicle === 'mobil' ? 'Mobil' : 'Motor';
+
+                // Method breakdown pills
+                const methodPills = [];
+                if (svc.methods.cash > 0) methodPills.push(`<span class="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200">💵 ${formatRupiah(svc.methods.cash)}</span>`);
+                if (svc.methods.qris > 0) methodPills.push(`<span class="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">📱 ${formatRupiah(svc.methods.qris)}</span>`);
+                if (svc.methods.transfer > 0) methodPills.push(`<span class="text-[10px] bg-cyan-50 text-cyan-700 px-1.5 py-0.5 rounded border border-cyan-200">🏦 ${formatRupiah(svc.methods.transfer)}</span>`);
+                if (svc.methods.bon > 0) methodPills.push(`<span class="text-[10px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200">📝 ${formatRupiah(svc.methods.bon)}</span>`);
+
+                return `
+                    <tr class="hover:bg-blue-50/40 transition-colors">
+                        <td class="py-3 px-3 text-center font-bold text-slate-400">${idx + 1}</td>
+                        <td class="py-3 px-4 font-bold text-slate-900">
+                            <div class="flex items-center gap-1.5">
+                                <span>${svc.name}</span>
+                            </div>
+                            <div class="flex items-center gap-1 mt-1 flex-wrap">
+                                ${methodPills.join(' ')}
+                            </div>
+                        </td>
+                        <td class="py-3 px-3">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                ${categoryName}
+                            </span>
+                        </td>
+                        <td class="py-3 px-3 text-center">
+                            <span class="inline-flex items-center gap-1 font-semibold text-slate-700">
+                                <span>${vehIcon}</span>
+                                <span>${vehLabel}</span>
+                            </span>
+                        </td>
+                        <td class="py-3 px-3 text-center font-mono text-slate-600">
+                            ${formatRupiah(svc.price)}
+                            <div class="text-[10px] text-slate-400">/${svc.unit}</div>
+                        </td>
+                        <td class="py-3 px-3 text-center">
+                            <span class="px-2.5 py-1 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg font-black text-xs">
+                                ${svc.qty}x
+                            </span>
+                        </td>
+                        <td class="py-3 px-4 text-right font-black text-emerald-600 text-sm">
+                            ${formatRupiah(svc.revenue)}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            if (servicesTableFoot) {
+                servicesTableFoot.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="py-3 px-4 text-right font-bold text-slate-700 uppercase tracking-wider text-[11px]">
+                            Total Seluruh Layanan Hari Ini:
+                        </td>
+                        <td class="py-3 px-3 text-center font-black text-slate-900 text-xs">
+                            <span class="px-2.5 py-1 bg-slate-200 rounded-lg">${totalServicesQtyToday} unit</span>
+                        </td>
+                        <td class="py-3 px-4 text-right font-black text-emerald-700 text-base">
+                            ${formatRupiah(totalServicesRevenueToday)}
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+    }
+
+    if (uniqueServicesBadge) {
+        uniqueServicesBadge.textContent = `${aggregatedServices.length} Jenis Layanan`;
+    }
+
+    // 3. KPI Hari Ini
+    const totalTodayOmset = allTodayTx.reduce((sum, tx) => sum + (Number(tx.total) || 0), 0);
+    const totalTodayDiscount = allTodayTx.reduce((sum, tx) => sum + (Number(tx.discountAmount) || 0), 0);
+    const countTodayTx = allTodayTx.length;
+
+    if (totalOmsetEl) totalOmsetEl.textContent = formatRupiah(totalTodayOmset);
+    if (totalTxEl) totalTxEl.textContent = `${countTodayTx} Transaksi`;
+    if (totalServicesEl) totalServicesEl.textContent = `${totalServicesQtyToday} Layanan`;
+    if (discountEl) discountEl.textContent = formatRupiah(totalTodayDiscount);
+
+    // 4. Rekapitulasi Metode Pembayaran Hari Ini
+    if (methodsGrid) {
+        const methods = [
+            { id: 'cash', name: 'Tunai di Laci Kasir', icon: '💵', color: 'border-emerald-200 bg-emerald-50/70 text-emerald-800' },
+            { id: 'qris', name: 'QRIS Kasir', icon: '📱', color: 'border-blue-200 bg-blue-50/70 text-blue-800' },
+            { id: 'transfer', name: 'Transfer Bank BRI', icon: '🏦', color: 'border-cyan-200 bg-cyan-50/70 text-cyan-800' },
+            { id: 'bon', name: 'Bon / Piutang', icon: '📝', color: 'border-amber-200 bg-amber-50/70 text-amber-800' }
+        ];
+
+        methodsGrid.innerHTML = methods.map(m => {
+            const mTx = allTodayTx.filter(t => t.paymentMethod === m.id);
+            const sum = mTx.reduce((a, b) => a + (Number(b.total) || 0), 0);
+            const pct = totalTodayOmset > 0 ? Math.round((sum / totalTodayOmset) * 100) : 0;
+
+            return `
+                <div class="p-3 rounded-xl border flex flex-col justify-between ${m.color}">
+                    <div class="flex items-center justify-between">
+                        <span class="font-extrabold flex items-center gap-1.5">${m.icon} ${m.name}</span>
+                        <span class="text-[10px] font-bold opacity-75">${mTx.length} nota (${pct}%)</span>
+                    </div>
+                    <div class="text-sm font-black mt-2">
+                        ${formatRupiah(sum)}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // 5. Filter List Transaksi Hari Ini berdasarkan Dropdown & Search Input
+    const filteredTx = allTodayTx.filter(tx => {
+        // Metode
+        if (state.summaryFilterPayment && state.summaryFilterPayment !== 'all') {
+            if (tx.paymentMethod !== state.summaryFilterPayment) return false;
+        }
+        // Kendaraan
+        if (state.summaryFilterVehicle && state.summaryFilterVehicle !== 'all') {
+            if (tx.vehicleType !== state.summaryFilterVehicle) return false;
+        }
+        // Kata Kunci
+        if (state.summarySearchKeyword && state.summarySearchKeyword.trim() !== '') {
+            const kw = state.summarySearchKeyword.toLowerCase().trim();
+            const invMatch = (tx.invoiceNo || '').toLowerCase().includes(kw);
+            const nameMatch = (tx.customerName || '').toLowerCase().includes(kw);
+            const plateMatch = (tx.plateNumber || '').toLowerCase().includes(kw);
+            const phoneMatch = (tx.customerPhone || '').toLowerCase().includes(kw);
+            const itemMatch = (tx.items || []).some(item => (item.name || '').toLowerCase().includes(kw));
+            if (!invMatch && !nameMatch && !plateMatch && !phoneMatch && !itemMatch) return false;
+        }
+        return true;
+    });
+
+    if (paidCountBadge) {
+        paidCountBadge.textContent = `${filteredTx.length} nota hari ini`;
+    }
+
+    if (periodDescEl) {
+        periodDescEl.textContent = `Penerimaan Hari Ini (${dateFormattedShort}) • Total Pembayaran Masuk: ${formatRupiah(totalTodayOmset)}`;
+    }
+
+    // Render Kartu Nota Detail Hari Ini
+    if (filteredTx.length === 0) {
+        container.innerHTML = `
+            <div class="py-10 px-4 text-center bg-slate-50/80 rounded-2xl border border-dashed border-slate-300">
+                <div class="text-4xl mb-2">📋</div>
+                <h4 class="font-bold text-slate-700 text-sm">Tidak ada transaksi yang cocok untuk hari ini (${dateFormattedShort})</h4>
+                <p class="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                    ${allTodayTx.length === 0 
+                        ? 'Belum ada transaksi yang diproses di kasir hari ini. Lakukan pembayaran baru melalui menu Kasir Pembayaran.' 
+                        : 'Sesuaikan pilihan metode pembayaran, kendaraan, atau hapus kata kunci pencarian Anda.'}
+                </p>
+                <div class="mt-4 flex items-center justify-center gap-2">
+                    ${allTodayTx.length > 0 ? `
+                        <button type="button" onclick="resetSummaryFilters()" 
+                            class="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer">
+                            Reset Filter
+                        </button>
+                    ` : ''}
+                    <button type="button" onclick="switchTab('pos')" 
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer">
+                        <span>➕</span>
+                        <span>Buka Kasir Pembayaran</span>
+                    </button>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = filteredTx.map(tx => generatePaidServicesCardHTML(tx)).join('');
+}
+
+window.printTransactionDirect = function(txId) {
+    const tx = state.transactions.find(t => t.id === txId);
+    if (!tx) return;
+    openReceiptModal(tx);
+    setTimeout(() => {
+        window.print();
+    }, 250);
+};
+
+window.printTodaySummary = function() {
+    const printContainer = document.getElementById('print-daily-summary-section');
+    if (!printContainer) return;
+
+    const now = new Date();
+    const dateFormattedLong = now.toLocaleDateString('id-ID', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    });
+    const timeFormatted = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
+    const isTxToday = (tx) => {
+        if (!tx.date) return false;
+        const txDate = new Date(tx.date);
+        if (isNaN(txDate.getTime())) return false;
+        return txDate.getDate() === now.getDate() &&
+               txDate.getMonth() === now.getMonth() &&
+               txDate.getFullYear() === now.getFullYear();
+    };
+
+    const allTodayTx = (state.transactions || []).filter(isTxToday);
+    const totalOmset = allTodayTx.reduce((sum, tx) => sum + (Number(tx.total) || 0), 0);
+    const totalDiscount = allTodayTx.reduce((sum, tx) => sum + (Number(tx.discountAmount) || 0), 0);
+
+    // Group services
+    const serviceMap = {};
+    let totalQty = 0;
+    allTodayTx.forEach(tx => {
+        (tx.items || []).forEach(item => {
+            const key = item.name || item.id;
+            if (!serviceMap[key]) {
+                serviceMap[key] = {
+                    name: item.name,
+                    vehicle: tx.vehicleType || 'motor',
+                    price: Number(item.price) || 0,
+                    qty: 0,
+                    revenue: 0
+                };
+            }
+            const q = Number(item.qty) || 1;
+            serviceMap[key].qty += q;
+            serviceMap[key].revenue += (Number(item.price) || 0) * q;
+            totalQty += q;
+        });
+    });
+
+    const services = Object.values(serviceMap).sort((a, b) => b.revenue - a.revenue);
+
+    const cashSum = allTodayTx.filter(t => t.paymentMethod === 'cash').reduce((a, b) => a + (Number(b.total) || 0), 0);
+    const qrisSum = allTodayTx.filter(t => t.paymentMethod === 'qris').reduce((a, b) => a + (Number(b.total) || 0), 0);
+    const tfSum = allTodayTx.filter(t => t.paymentMethod === 'transfer').reduce((a, b) => a + (Number(b.total) || 0), 0);
+    const bonSum = allTodayTx.filter(t => t.paymentMethod === 'bon').reduce((a, b) => a + (Number(b.total) || 0), 0);
+
+    printContainer.innerHTML = `
+        <div style="font-family: Arial, sans-serif; font-size: 12px; color: #111; max-width: 800px; margin: 0 auto; line-height: 1.4;">
+            <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px;">
+                <h2 style="font-size: 18px; font-weight: bold; margin: 0; text-transform: uppercase;">${state.profile.name || 'JAARS GARAGE'}</h2>
+                <div style="font-size: 11px; margin-top: 2px;">${state.profile.tagline || 'Bengkel Ban, Bongkar Roda & Cuci Kendaraan'}</div>
+                <div style="font-size: 11px;">${state.profile.address || ''} | Telp: ${state.profile.phone || ''}</div>
+                <h3 style="font-size: 14px; font-weight: bold; margin: 8px 0 0; text-decoration: underline;">SLIP REKAPITULASI PEMBAYARAN & TUTUP KASIR HARIAN</h3>
+                <div style="font-size: 11px; margin-top: 3px;">Tanggal: <strong>${dateFormattedLong}</strong> | Waktu Cetak: ${timeFormatted} WIB</div>
+            </div>
+
+            <!-- Financial Summary Box -->
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 11px;">
+                <tr>
+                    <td style="border: 1px solid #ccc; padding: 8px; background: #f8fafc; width: 25%;">
+                        <div>TOTAL PEMBAYARAN MASUK:</div>
+                        <strong style="font-size: 14px; color: #047857;">${formatRupiah(totalOmset)}</strong>
+                    </td>
+                    <td style="border: 1px solid #ccc; padding: 8px; background: #f8fafc; width: 25%;">
+                        <div>TOTAL TRANSAKSI:</div>
+                        <strong style="font-size: 14px;">${allTodayTx.length} Nota</strong>
+                    </td>
+                    <td style="border: 1px solid #ccc; padding: 8px; background: #f8fafc; width: 25%;">
+                        <div>TOTAL UNIT LAYANAN:</div>
+                        <strong style="font-size: 14px;">${totalQty} Pengerjaan</strong>
+                    </td>
+                    <td style="border: 1px solid #ccc; padding: 8px; background: #f8fafc; width: 25%;">
+                        <div>TOTAL DISKON:</div>
+                        <strong style="font-size: 14px; color: #e11d48;">${formatRupiah(totalDiscount)}</strong>
+                    </td>
+                </tr>
+            </table>
+
+            <!-- Breakdown Payment Methods -->
+            <div style="font-weight: bold; font-size: 12px; margin-bottom: 4px;">RINCIAN SALURAN PEMBAYARAN HARI INI:</div>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 11px;">
+                <tr style="background: #f1f5f9;">
+                    <th style="border: 1px solid #ccc; padding: 6px; text-align: left;">Metode</th>
+                    <th style="border: 1px solid #ccc; padding: 6px; text-align: center;">Jumlah Nota</th>
+                    <th style="border: 1px solid #ccc; padding: 6px; text-align: right;">Total Nominal (Rp)</th>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid #ccc; padding: 5px;">💵 Uang Tunai di Laci Kasir</td>
+                    <td style="border: 1px solid #ccc; padding: 5px; text-align: center;">${allTodayTx.filter(t => t.paymentMethod === 'cash').length}</td>
+                    <td style="border: 1px solid #ccc; padding: 5px; text-align: right; font-weight: bold;">${formatRupiah(cashSum)}</td>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid #ccc; padding: 5px;">📱 QRIS Kasir</td>
+                    <td style="border: 1px solid #ccc; padding: 5px; text-align: center;">${allTodayTx.filter(t => t.paymentMethod === 'qris').length}</td>
+                    <td style="border: 1px solid #ccc; padding: 5px; text-align: right; font-weight: bold;">${formatRupiah(qrisSum)}</td>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid #ccc; padding: 5px;">🏦 Transfer Bank BRI</td>
+                    <td style="border: 1px solid #ccc; padding: 5px; text-align: center;">${allTodayTx.filter(t => t.paymentMethod === 'transfer').length}</td>
+                    <td style="border: 1px solid #ccc; padding: 5px; text-align: right; font-weight: bold;">${formatRupiah(tfSum)}</td>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid #ccc; padding: 5px;">📝 Bon / Piutang Belum Lunas</td>
+                    <td style="border: 1px solid #ccc; padding: 5px; text-align: center;">${allTodayTx.filter(t => t.paymentMethod === 'bon').length}</td>
+                    <td style="border: 1px solid #ccc; padding: 5px; text-align: right; font-weight: bold;">${formatRupiah(bonSum)}</td>
+                </tr>
+            </table>
+
+            <!-- Service Table -->
+            <div style="font-weight: bold; font-size: 12px; margin-bottom: 4px;">RINCIAN PEMBAYARAN PER SETIAP LAYANAN HARI INI:</div>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 11px;">
+                <tr style="background: #f1f5f9;">
+                    <th style="border: 1px solid #ccc; padding: 6px; text-align: center; width: 30px;">No</th>
+                    <th style="border: 1px solid #ccc; padding: 6px; text-align: left;">Nama Layanan / Sparepart</th>
+                    <th style="border: 1px solid #ccc; padding: 6px; text-align: center;">Kendaraan</th>
+                    <th style="border: 1px solid #ccc; padding: 6px; text-align: center;">Tarif</th>
+                    <th style="border: 1px solid #ccc; padding: 6px; text-align: center;">Qty</th>
+                    <th style="border: 1px solid #ccc; padding: 6px; text-align: right;">Total Masuk (Rp)</th>
+                </tr>
+                ${services.map((s, i) => `
+                    <tr>
+                        <td style="border: 1px solid #ccc; padding: 5px; text-align: center;">${i + 1}</td>
+                        <td style="border: 1px solid #ccc; padding: 5px;">${s.name}</td>
+                        <td style="border: 1px solid #ccc; padding: 5px; text-align: center;">${s.vehicle.toUpperCase()}</td>
+                        <td style="border: 1px solid #ccc; padding: 5px; text-align: center;">${formatRupiah(s.price)}</td>
+                        <td style="border: 1px solid #ccc; padding: 5px; text-align: center; font-weight: bold;">${s.qty}x</td>
+                        <td style="border: 1px solid #ccc; padding: 5px; text-align: right; font-weight: bold;">${formatRupiah(s.revenue)}</td>
+                    </tr>
+                `).join('')}
+                <tr style="background: #f8fafc; font-weight: bold;">
+                    <td colspan="4" style="border: 1px solid #ccc; padding: 6px; text-align: right;">TOTAL:</td>
+                    <td style="border: 1px solid #ccc; padding: 6px; text-align: center;">${totalQty}x</td>
+                    <td style="border: 1px solid #ccc; padding: 6px; text-align: right; color: #047857;">${formatRupiah(totalOmset)}</td>
+                </tr>
+            </table>
+
+            <!-- Signatures -->
+            <div style="display: flex; justify-content: space-between; margin-top: 30px; padding: 0 40px; text-align: center; font-size: 11px;">
+                <div>
+                    <div>Kasir / Petugas,</div>
+                    <div style="height: 50px;"></div>
+                    <div style="border-top: 1px solid #000; width: 140px; margin: 0 auto; padding-top: 4px;">(..................................)</div>
+                </div>
+                <div>
+                    <div>Owner / Administrator,</div>
+                    <div style="height: 50px;"></div>
+                    <div style="border-top: 1px solid #000; width: 140px; margin: 0 auto; padding-top: 4px;">( ${state.profile.name ? 'Jaars Garage' : 'Admin'} )</div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    setTimeout(() => {
+        window.print();
+    }, 250);
+};
+
+window.resetSummaryFilters = function() {
+    state.summaryFilterPayment = 'all';
+    state.summaryFilterVehicle = 'all';
+    state.summarySearchKeyword = '';
+    const searchInput = document.getElementById('search-paid-services-input');
+    const paySelect = document.getElementById('select-summary-payment');
+    const vehSelect = document.getElementById('select-summary-vehicle');
+    if (searchInput) searchInput.value = '';
+    if (paySelect) paySelect.value = 'all';
+    if (vehSelect) vehSelect.value = 'all';
+    renderPaidServicesSummary();
+};
+
+window.exportTodayPaidServicesToExcel = function() {
+    const now = new Date();
+    const isTxToday = (tx) => {
+        if (!tx.date) return false;
+        const txDate = new Date(tx.date);
+        if (isNaN(txDate.getTime())) return false;
+        return txDate.getDate() === now.getDate() &&
+               txDate.getMonth() === now.getMonth() &&
+               txDate.getFullYear() === now.getFullYear();
+    };
+
+    const allTodayTx = (state.transactions || []).filter(isTxToday);
+    if (allTodayTx.length === 0) {
+        alert('Belum ada transaksi hari ini untuk diekspor ke Excel.');
+        return;
+    }
+
+    // 1. Sheet Rekap Layanan Hari Ini
+    const serviceMap = {};
+    allTodayTx.forEach(tx => {
+        (tx.items || []).forEach(item => {
+            const key = item.name || item.id;
+            if (!serviceMap[key]) {
+                serviceMap[key] = {
+                    name: item.name,
+                    category: item.categoryId || item.category || 'Jasa',
+                    vehicle: (tx.vehicleType || 'motor').toUpperCase(),
+                    price: Number(item.price) || 0,
+                    qty: 0,
+                    revenue: 0,
+                    cash: 0,
+                    qris: 0,
+                    transfer: 0,
+                    bon: 0
+                };
+            }
+            const q = Number(item.qty) || 1;
+            const sub = (Number(item.price) || 0) * q;
+            serviceMap[key].qty += q;
+            serviceMap[key].revenue += sub;
+            const pm = tx.paymentMethod || 'cash';
+            if (serviceMap[key][pm] !== undefined) serviceMap[key][pm] += sub;
+        });
+    });
+
+    const services = Object.values(serviceMap).sort((a, b) => b.revenue - a.revenue);
+    const serviceRows = [
+        ['REKAPITULASI PEMBAYARAN PER SETIAP LAYANAN HARI INI'],
+        [`Bengkel: ${state.profile.name || 'Jaars Garage'}`],
+        [`Tanggal: ${now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`],
+        [''],
+        ['No', 'Nama Layanan / Sparepart', 'Kategori', 'Kendaraan', 'Tarif Satuan (Rp)', 'Jumlah Dikerjakan (Qty)', 'Tunai (Rp)', 'QRIS (Rp)', 'Transfer BRI (Rp)', 'Bon (Rp)', 'Total Pemasukan (Rp)']
+    ];
+
+    let totalQty = 0;
+    let totalRevenue = 0;
+    services.forEach((s, idx) => {
+        totalQty += s.qty;
+        totalRevenue += s.revenue;
+        serviceRows.push([
+            idx + 1,
+            s.name,
+            s.category,
+            s.vehicle,
+            s.price,
+            s.qty,
+            s.cash,
+            s.qris,
+            s.transfer,
+            s.bon,
+            s.revenue
+        ]);
+    });
+    serviceRows.push(['']);
+    serviceRows.push(['', 'TOTAL KESELURUHAN HARI INI', '', '', '', totalQty, '', '', '', '', totalRevenue]);
+
+    // 2. Sheet Daftar Nota Hari Ini
+    const txRows = [
+        ['DAFTAR TRANSAKSI & HASIL LAYANAN DETAIL HARI INI'],
+        [`Bengkel: ${state.profile.name || 'Jaars Garage'}`],
+        [`Tanggal: ${now.toLocaleDateString('id-ID')}`],
+        [''],
+        ['No', 'No. Nota', 'Jam', 'Nama Pelanggan', 'No. WhatsApp', 'Plat Nomor', 'Kendaraan', 'Layanan yang Dikerjakan', 'Subtotal (Rp)', 'Diskon (Rp)', 'Total Bayar (Rp)', 'Metode Pembayaran', 'Catatan']
+    ];
+
+    allTodayTx.forEach((tx, idx) => {
+        const itemsStr = (tx.items || []).map(i => `${i.name} (${i.qty}x)`).join('; ');
+        const payStr = tx.paymentMethod === 'cash' ? 'Tunai' :
+                       tx.paymentMethod === 'qris' ? 'QRIS' :
+                       tx.paymentMethod === 'transfer' ? 'Transfer BRI' : 'Bon / Hutang';
+        const jamStr = tx.date ? new Date(tx.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-';
+        txRows.push([
+            idx + 1,
+            tx.invoiceNo || '-',
+            jamStr,
+            tx.customerName || 'Pelanggan Umum',
+            tx.customerPhone || '-',
+            tx.plateNumber || '-',
+            (tx.vehicleType || 'motor').toUpperCase(),
+            itemsStr,
+            Number(tx.subtotal) || 0,
+            Number(tx.discountAmount) || 0,
+            Number(tx.total) || 0,
+            payStr,
+            tx.orderNote || '-'
+        ]);
+    });
+
+    if (typeof XLSX !== 'undefined') {
+        const wb = XLSX.utils.book_new();
+        const wsServices = XLSX.utils.aoa_to_sheet(serviceRows);
+        const wsTx = XLSX.utils.aoa_to_sheet(txRows);
+        XLSX.utils.book_append_sheet(wb, wsServices, "Rekap Layanan Hari Ini");
+        XLSX.utils.book_append_sheet(wb, wsTx, "Daftar Transaksi Hari Ini");
+        const filename = `Ringkasan_Pembayaran_Hari_Ini_${now.toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(wb, filename);
+        showToast('📗 Berhasil mengunduh ringkasan pembayaran hari ini ke Excel!');
+    } else {
+        showToast('SheetJS belum termuat. Silakan gunakan tombol cetak rekap.');
+    }
+};
+
+window.exportPaidServicesToExcel = window.exportTodayPaidServicesToExcel;
 
 function renderHistory() {
     populateYearFilterOptions();
@@ -3172,62 +4358,7 @@ function renderHistory() {
         return;
     }
 
-    listContainer.innerHTML = filteredTx.map(tx => {
-        const itemsSummary = (tx.items || []).map(i => `${i.name} (x${i.qty})`).join(', ');
-        const payBadge = tx.paymentMethod === 'cash' ? 'bg-emerald-100 text-emerald-800' :
-                         tx.paymentMethod === 'qris' ? 'bg-blue-100 text-blue-800' :
-                         tx.paymentMethod === 'transfer' ? 'bg-cyan-100 text-cyan-800' : 'bg-amber-100 text-amber-800';
-        const payName = tx.paymentMethod === 'cash' ? 'Tunai' :
-                        tx.paymentMethod === 'qris' ? 'QRIS' :
-                        tx.paymentMethod === 'transfer' ? 'Transfer' : 'Bon';
-
-        return `
-            <div class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-slate-300 transition-colors">
-                <div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs font-bold text-slate-900">${tx.invoiceNo}</span>
-                        <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${tx.vehicleType === 'motor' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}">
-                            ${tx.vehicleType}
-                        </span>
-                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${payBadge}">
-                            ${payName}
-                        </span>
-                        <span class="text-xs text-slate-400">• ${formatDate(tx.date)}</span>
-                    </div>
-                    <div class="text-sm font-semibold text-slate-800 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        <span>${tx.customerName} <span class="text-slate-400 font-normal">(${tx.plateNumber})</span></span>
-                        ${tx.customerPhone ? `<span class="text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-mono border border-emerald-200">📱 ${tx.customerPhone}</span>` : ''}
-                    </div>
-                    <div class="text-xs text-slate-500 line-clamp-1 mt-0.5">
-                        ${itemsSummary}
-                    </div>
-                </div>
-
-                <div class="flex items-center justify-between md:justify-end gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
-                    <div class="text-right mr-1">
-                        <div class="text-[10px] text-slate-400">Total Biaya</div>
-                        <div class="text-base font-extrabold text-blue-600">${formatRupiah(tx.total)}</div>
-                    </div>
-                    <button onclick="sendDirectWhatsApp('${tx.id}')"
-                        class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1"
-                        title="Kirim Nota via WhatsApp">
-                        <span>💬</span>
-                        <span>Kirim WA</span>
-                    </button>
-                    <button onclick="viewHistoryReceipt('${tx.id}')"
-                        class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all">
-                        Lihat Nota
-                    </button>
-                    <button onclick="deleteTransaction('${tx.id}')"
-                        class="p-1.5 text-slate-400 hover:text-red-600 transition-colors" title="Hapus transaksi">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                    </button>
-                </div>
-            </div>
-        `;
-    }).join('');
+    listContainer.innerHTML = filteredTx.map(tx => generatePaidServicesCardHTML(tx)).join('');
 }
 
 // --- EXPORT FINANCIAL REPORT TO EXCEL (.XLSX) ---
@@ -3731,6 +4862,7 @@ window.deleteTransaction = function(txId) {
         state.transactions = state.transactions.filter(t => t.id !== txId);
         saveTransactions();
         renderHistory();
+        renderPaidServicesSummary();
         showToast('Transaksi dihapus dari riwayat.');
     }
 };

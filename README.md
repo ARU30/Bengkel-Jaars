@@ -8,47 +8,61 @@ Aplikasi ini dapat langsung dijalankan di browser tanpa perlu server, serta **10
 
 ## ✨ Fitur Utama
 
-1. **🧮 Kalkulator Cepat & Kasir POS:**
-   - **Pilihan Jenis Kendaraan (1-Klik):** Beralih antara tarif **Sepeda Motor** dan **Mobil**. Harga otomatis menyesuaikan jenis kendaraan.
-   - **Kategori Layanan Lengkap:**
-     - 🔧 **Tambal Ban:** Tubeless cacing, tip-top dingin/payung, press bakar/kompor, tambal ban dalam, cairan antibocor.
-     - ⚙️ **Bongkar Pasang Ban & Roda:** Bongkar pasang ban standar/sport/moge/mobil ring 13-20+, balancing roda, isi nitrogen, tambah angin, penggantian pentil karet/besi.
-     - 🧼 **Cuci Kendaraan:** Cuci motor reguler/salju, cuci motor besar/detailing, cuci mobil salju, cuci hidrolik kolong (kolong & bodi), cuci mesin (engine bay), poles wax.
-     - 📦 **Sparepart & Tambahan:** Ban dalam baru berbagai ukuran, pentil tubeless, botol semir ban, parfum mobil.
-   - **Item Khusus / Tambahan Bebas (On-the-fly):** Kasir dapat menambahkan item/jasa dadakan langsung ke nota tanpa harus masuk ke database tarif.
-   - **Kalkulator Kembalian Cepat:** Tombol pecahan uang pas, Rp 20.000, Rp 50.000, Rp 100.000, serta deteksi otomatis kurang bayar.
-   - **Metode Pembayaran:** Tunai (Cash), QRIS, Transfer Bank, dan Bon (Tempo).
+1. **📅 Booking Pelayanan Bengkel (Sistem Pengguna / User):**
+   - **Pemesanan Layanan Mandiri:** Pengguna atau pelanggan dapat memilih jenis kendaraan (**Sepeda Motor** / **Mobil**), memilih layanan bengkel atau produk ban/oli, mengisi informasi kendaraan (plat nomor, nama pelanggan, nomor WhatsApp, serta catatan rencana waktu kedatangan).
+   - **Metode Pembayaran Non-Tunai (Uang Tunai Ditiadakan untuk Pengguna):** Pada sistem pengguna, metode pembayaran dengan **uang tunai (cash)** dan **bon** ditiadakan demi keamanan dan verifikasi pesanan. Pengguna hanya dapat melakukan pembayaran non-tunai melalui **📱 QRIS** (dengan scan langsung / modal perbesar) atau **🏦 Transfer Bank BRI**.
+   - **Langsung Terkirim ke WhatsApp Admin JAARS (085156696378):** Ketika pengguna mengklik tombol tunggal *"📅 Konfirmasi Booking Pelayanan"*, sistem langsung memproses pesanan, memunculkan bukti booking, dan seketika membuka WhatsApp menuju nomor resmi Admin JAARS Garage (**085156696378**) lengkap dengan **Kode Booking Resmi** (contoh: `#INV-123456`). Nomor tujuan WhatsApp di bukti booking dikunci permanen (`readonly`) sehingga tidak dapat diubah atau diedit oleh pengguna.
+   - **Kasir POS Lengkap Khusus Admin:** Saat pengelola bengkel login ke mode Admin, tampilan otomatis beralih menjadi kasir meja depan dengan akses penuh ke metode pembayaran **💵 Tunai (Cash)** (lengkap dengan kalkulator uang dan pecahan kembalian) serta **📝 Bon** untuk melayani pelanggan *walk-in* di bengkel.
 
-2. **⚙️ Input & Manajemen Tarif Mandiri (Custom Pricing):**
+2. **🛑 Kontrol Jam Operasional & Tombol Navigasi "Tutup Bengkel":**
+   - **Tombol Navigasi di Bar Admin & Menu Pengaturan:** Admin bengkel dapat mengubah status buka/tutup bengkel dengan 1 klik melalui tombol `🔴 Tutup Bengkel` di bar atas maupun di menu Pengaturan Identitas Bengkel (Jam Operasional).
+   - **Pemberitahuan Otomatis ke Sistem Pengguna/User:** Saat status tutup diaktifkan oleh admin:
+     - Banner peringatan warna merah tampil di form Booking Pelayanan lengkap dengan alasan tutup dan tombol cepat tanya WhatsApp.
+     - Bar status atas dan kartu Jam Operasional di menu Informasi menampilkan `🔴 BENGKEL SEDANG TUTUP`.
+   - **Buka Bengkel Kembali:** Kapan saja bengkel siap beroperasi, admin cukup mengklik `🟢 Buka Bengkel` untuk menormalkan kembali tampilan pengguna secara instan.
+
+3. **📋 Ringkasan Pembayaran Layanan Hari Ini (Khusus Sistem Admin - Tutup Kasir):**
+   - **Fokus Khusus Hari Ini (Real-Time Settlement):** Hanya menampilkan pembayaran dan transaksi layanan yang selesai dikerjakan **pada hari ini saja**, membedakannya secara tegas dengan menu arsip jangka panjang *Laporan & Riwayat*.
+   - **Rekapitulasi Pembayaran Berdasarkan Setiap Layanan Hari Ini:** Tabel agregasi detail yang merangkum setiap jenis layanan/produk yang dikerjakan hari ini, jumlah unit/qty pengerjaan, tarif satuan, rincian pembayaran (Tunai, QRIS, BRI, Bon), dan total penerimaan uang per layanan.
+   - **Rincian Setiap Nota Transaksi Hari Ini:** Setiap nota pelanggan yang dibayar hari ini memuat tabel layanan detail lengkap (nama layanan, qty, tarif satuan, subtotal), jam transaksi, plat nomor, pelanggan, tombol cetak nota, dan kirim nota WhatsApp.
+   - **4 KPI Finansial Hari Ini:** Total Pembayaran Masuk Hari Ini, Jumlah Transaksi Hari Ini, Total Layanan Selesai Hari Ini, dan Total Diskon Hari Ini.
+   - **Rincian Saluran Pembayaran Kasir Hari Ini:** Komposisi uang tunai di laci kasir, QRIS, transfer bank BRI, dan bon piutang hari ini.
+   - **🖨️ Cetak Slip Rekap Hari Ini:** Cetak slip rekapitulasi harian / lembar tutup kasir lengkap dengan tanda tangan kasir dan admin.
+   - **📗 Export Excel Hari Ini (.xlsx):** Ekspor rekapitulasi layanan dan transaksi hari ini ke file Excel berformat rapi dengan 2 lembar kerja (*sheet*).
+
+4. **📊 Laporan & Riwayat Keuangan (Khusus Sistem Admin - Pembukuan Jangka Panjang):**
+   - **Analisis & Pembukuan Multitemporal:** Menyajikan laporan keuangan akumulatif jangka panjang untuk pembukuan bengkel.
+   - **Filter Waktu Lengkap:** Filter rentang waktu (Hari Ini, 7 Hari Terakhir, Bulan Ini, Tahun Ini, dan Semua Riwayat).
+   - **Pemilihan Bulan & Tahun Spesifik:** Filter laporan berdasarkan bulan (Januari - Desember) dan tahun tertentu.
+   - **Grafik Omset & Tren Pendapatan:** Grafik visual interaktif perkembangan omset bengkel.
+   - **Ekspor & Impor Excel (.xlsx):** Unduh format template pembukuan, impor data transaksi massal, dan ekspor arsip pembukuan lengkap.
+
+5. **⚙️ Input & Manajemen Tarif Mandiri (Custom Pricing):**
    - **Ubah Harga Suka-Suka:** Anda dapat mengubah nominal tarif motor maupun mobil untuk setiap layanan secara mandiri kapan saja.
    - **Tambah Layanan Baru:** Buat layanan atau produk baru sesuai keunikan bengkel Anda.
    - **Hapus Layanan:** Hapus layanan yang tidak disediakan.
    - **Cadangkan & Pulihkan (Backup & Restore JSON):** Simpan seluruh data tarif dan transaksi ke file JSON untuk dipindahkan ke HP atau laptop kasir lain dengan mudah.
    - **Reset ke Default:** Kembalikan ke tarif standar kapan saja jika diperlukan.
 
-3. **🧾 Cetak Struk & WhatsApp:**
+6. **🧾 Cetak Struk & WhatsApp:**
    - **Cetak Struk Thermal:** Kompatibel dengan printer thermal kasir bluetooth/USB ukuran 58mm atau 80mm serta kertas printer biasa.
    - **Kirim Nota via WhatsApp (1-Klik):** Mengirimkan rincian nota rapi berformat teks lengkap dengan emoji ke nomor WhatsApp pelanggan.
 
-4. **📊 Laporan & Riwayat Omset:**
-   - Rekap total omset harian, mingguan, bulanan, jumlah transaksi, dan rata-rata penjualan.
-   - Riwayat transaksi tersimpan otomatis di penyimpanan lokal browser (`localStorage`).
-
-5. **🏢 Pengaturan Profil Bengkel:**
+7. **🏢 Pengaturan Profil Bengkel:**
    - Ubah Nama Bengkel, Tagline, Nomor WhatsApp, Email Resmi, Alamat, Jam Operasional, dan Pesan Kaki Struk sesuai bengkel Anda.
 
-6. **ℹ️ Menu Informasi Bengkel (Sistem Pengguna / User):**
+8. **ℹ️ Menu Informasi Bengkel (Sistem Pengguna / User):**
    - Tampilan menu informasi lengkap yang dapat diakses langsung oleh kasir maupun pelanggan tanpa perlu login Admin.
    - Menyajikan informasi **Kontak & WhatsApp** (dengan tombol 1-klik chat WA & panggilan telepon), **Alamat Lengkap** (dengan tombol buka rute di Google Maps), **Email Resmi** (dengan tombol kirim email), serta **Jam Operasional** dengan indikator status Buka/Tutup secara *real-time*.
    - Tombol salin 1-klik untuk nomor telepon, alamat fisik, dan alamat email ke clipboard.
 
-7. **🔐 Keamanan Akun Admin Berbasis Email & Password:**
+9. **🔐 Keamanan Akun Admin Berbasis Email & Password:**
    - Akses menu penting (**Kelola Tarif**, **Laporan & Riwayat Keuangan**, serta **Profil Bengkel**) diproteksi dengan otentikasi **Alamat Email dan Kata Sandi** (bukan sekadar PIN angka biasa).
    - Akun default awal: Email: `admin@jaarsgarage.com`, Password: `admin123`.
    - Email login dan kata sandi dapat diganti sewaktu-waktu di tab Profil Bengkel.
    - Dilengkapi tombol tampil/sembunyikan password (toggle view) demi kemudahan dan keamanan pengetikan.
 
-8. **📦 Katalog Ban Motor, Ban Mobil & Oli Kendaraan (User & Admin):**
+10. **📦 Katalog Ban Motor, Ban Mobil & Oli Kendaraan (User & Admin):**
    - **Tampilan Pengguna (Publik / User):**
      - Menu tab khusus **"Katalog Ban & Oli"** yang bebas diakses siapa saja tanpa perlu login.
      - **3 Kategori Utama:** Ban Sepeda Motor, Ban Mobil, dan Oli Kendaraan (Motor & Mobil).
@@ -65,7 +79,7 @@ Aplikasi ini dapat langsung dijalankan di browser tanpa perlu server, serta **10
      - **Hapus & Reset Master:** Admin dapat menghapus produk satuan atau mereset ke katalog default 17 produk rekomendasi kapan saja.
      - **Backup & Restore:** Data katalog ban dan oli otomatis ikut tersimpan saat ekspor/impor file JSON bengkel.
 
-9. **🌐 Sinkronisasi Cloud Antar-Perangkat Otomatis (Vercel & Multi-Device Auto-Sync):**
+10. **🌐 Sinkronisasi Cloud Antar-Perangkat Otomatis (Vercel & Multi-Device Auto-Sync):**
    - **Otomatis Berubah di Semua Perangkat:** Saat Admin mengubah tarif layanan, menambah produk katalog (seperti ban IRC SS 570F), atau mengedit profil bengkel di laptop, sistem secara otomatis mengirimkan konfigurasi ke Cloud Vercel (`/api/sync`) atau database cloud.
    - **Tampilan Khusus Admin:** Tombol & status Cloud Sync hanya ditampilkan untuk admin saat login (disembunyikan dari sistem pengguna umum agar tampilan pelanggan tetap bersih dan profesional).
    - **Perangkat Lain Tidak Perlu Mengulang Konfigurasi:** Saat HP kasir, tablet, atau laptop lain membuka aplikasi di Vercel, sistem otomatis menarik data terbaru di latar belakang (*background sync*) dan memperbarui penyimpanan lokal browser.

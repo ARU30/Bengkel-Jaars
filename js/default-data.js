@@ -13,7 +13,9 @@ const DEFAULT_PROFILE = {
     "bankName": "Bank BRI",
     "bankAccount": "0378 0105 2871 507",
     "bankHolder": "JABANG ARU SAPUTRO",
-    "qrisImage": "img/qris.jpeg"
+    "qrisImage": "img/qris.jpeg",
+    "isStoreClosed": false,
+    "closedReason": ""
 };
 
 const DEFAULT_ADMIN = {
@@ -518,5 +520,131 @@ const DEFAULT_CATALOG = [
         "stockStatus": "limited",
         "image": "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=500&auto=format&fit=crop&q=80",
         "desc": "Molekul pintar melekat pada komponen mesin, melindungi 50% lebih baik saat macet."
+    }
+];
+
+const DEFAULT_TRANSACTIONS = [
+    {
+        "id": "INV-JAARS-001",
+        "invoiceNo": "INV-849201",
+        "date": "2026-11-18T07:45:00.000Z",
+        "customerName": "Bpk. Agus Prasetyo",
+        "customerPhone": "081234567890",
+        "plateNumber": "AE 4582 BC",
+        "vehicleType": "motor",
+        "orderNote": "Pembersihan velg & pengecekan angin ban depan belakang",
+        "items": [
+            {
+                "id": "tb-01",
+                "categoryId": "tambal",
+                "name": "Tambal Tubeless (Tusuk / Cacing)",
+                "desc": "Tambal metode cacing cepat untuk ban tubeless",
+                "unit": "per lubang",
+                "price": 10000,
+                "qty": 1
+            },
+            {
+                "id": "cu-01",
+                "categoryId": "cuci",
+                "name": "Cuci Motor Reguler / Salju",
+                "desc": "Cuci bodi salju wax + semir ban",
+                "unit": "per motor",
+                "price": 15000,
+                "qty": 1
+            },
+            {
+                "id": "cat-ol-02",
+                "categoryId": "oli-motor",
+                "name": "Pertamina Enduro Matic G 20W-40",
+                "desc": "0.8 Liter JASO MB API SL",
+                "unit": "per botol",
+                "price": 45000,
+                "qty": 1
+            }
+        ],
+        "subtotal": 70000,
+        "discountType": "nominal",
+        "discountValue": 0,
+        "discountAmount": 0,
+        "total": 70000,
+        "cash": 70000,
+        "change": 0,
+        "paymentMethod": "qris"
+    },
+    {
+        "id": "INV-JAARS-002",
+        "invoiceNo": "INV-849188",
+        "date": "2026-11-18T06:30:00.000Z",
+        "customerName": "Ibu Rina Wijaya",
+        "customerPhone": "085790123456",
+        "plateNumber": "AE 1899 ZZ",
+        "vehicleType": "mobil",
+        "orderNote": "Cuci hidrolik kolong bersih mengkilap, semir ban 4 roda",
+        "items": [
+            {
+                "id": "cu-04",
+                "categoryId": "cuci",
+                "name": "Cuci Mobil Hidrolik Kolong (Understeel)",
+                "desc": "Angkat hidrolik X/H, semprot kolong lumpur & bodi salju",
+                "unit": "per mobil",
+                "price": 50000,
+                "qty": 1
+            },
+            {
+                "id": "bp-04",
+                "categoryId": "bongkar",
+                "name": "Isi Angin Ban Nitrogen Baru (4 Roda)",
+                "desc": "Kuras dan isi nitrogen murni 4 roda",
+                "unit": "4 roda",
+                "price": 20000,
+                "qty": 1
+            }
+        ],
+        "subtotal": 70000,
+        "discountType": "nominal",
+        "discountValue": 5000,
+        "discountAmount": 5000,
+        "total": 65000,
+        "cash": 100000,
+        "change": 35000,
+        "paymentMethod": "cash"
+    },
+    {
+        "id": "INV-JAARS-003",
+        "invoiceNo": "INV-849150",
+        "date": "2026-11-17T15:20:00.000Z",
+        "customerName": "Mas Danang Saputra",
+        "customerPhone": "082133445566",
+        "plateNumber": "AE 3314 KL",
+        "vehicleType": "motor",
+        "orderNote": "Ganti pentil tubeless besi karena pentil lama bocor halus",
+        "items": [
+            {
+                "id": "tb-02",
+                "categoryId": "tambal",
+                "name": "Tambal Tip-Top / Press Dingin (Payung)",
+                "desc": "Tambal dari bagian dalam, aman dan tidak merusak kawat ban",
+                "unit": "per titik",
+                "price": 25000,
+                "qty": 1
+            },
+            {
+                "id": "sp-02",
+                "categoryId": "sparepart",
+                "name": "Pentil Tubeless Besi / Alumunium",
+                "desc": "Pentil tubeless awet dengan baut pengunci",
+                "unit": "per buah",
+                "price": 15000,
+                "qty": 1
+            }
+        ],
+        "subtotal": 40000,
+        "discountType": "nominal",
+        "discountValue": 0,
+        "discountAmount": 0,
+        "total": 40000,
+        "cash": 40000,
+        "change": 0,
+        "paymentMethod": "transfer"
     }
 ];
