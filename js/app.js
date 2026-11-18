@@ -3539,7 +3539,7 @@ function openReceiptModal(tx) {
     const receiptContent = document.getElementById('receipt-print-area');
     if (!modal || !receiptContent) return;
 
-    const isBooking = (!state.isAdmin || tx.isBooking);
+    const isUserBooking = (!state.isAdmin);
 
     // Update modal title, description, label & badge dynamically
     const modalTitle = document.getElementById('modal-receipt-title');
@@ -3550,36 +3550,37 @@ function openReceiptModal(tx) {
     const waBtn = document.getElementById('btn-send-whatsapp');
 
     if (modalTitle) {
-        if (isBooking) {
+        if (isUserBooking) {
             modalTitle.innerHTML = '<span>📅</span> <span>Bukti Booking Pelayanan Berhasil Dibuat</span>';
         } else {
-            modalTitle.innerHTML = '<span>🧾</span> <span>Nota & Transaksi Kasir Selesai Diproses</span>';
+            modalTitle.innerHTML = `<span>🧾</span> <span>Nota Kasir & Booking (#${tx.invoiceNo})</span>`;
         }
     }
     if (waLabel) {
-        waLabel.textContent = isBooking 
+        waLabel.textContent = isUserBooking 
             ? 'Kirim Ulang Kode Booking ke WhatsApp Admin:' 
-            : 'Kirim Nota Kasir ke WhatsApp Pelanggan:';
+            : 'Kirim Bukti Booking / Nota ke WhatsApp Pemesan:';
     }
     if (waBadge) {
-        if (isBooking) {
+        if (isUserBooking) {
             waBadge.textContent = '🔒 Nomor Admin (Terkunci)';
             waBadge.className = 'text-[10px] text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded-full';
         } else {
-            waBadge.textContent = 'Bisa diedit';
-            waBadge.className = 'text-[10px] text-emerald-700 font-medium';
+            waBadge.textContent = '✏️ Bisa diedit (Admin)';
+            waBadge.className = 'text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full';
         }
     }
     if (waDesc) {
-        waDesc.textContent = isBooking 
+        waDesc.textContent = isUserBooking 
             ? `Pesan WhatsApp otomatis dikirimkan ke WhatsApp resmi Admin JAARS Garage (${ADMIN_JAARS_PHONE}) dengan Kode Booking #${tx.invoiceNo}.`
-            : 'Membuka WhatsApp & menyiapkan pesan nota biaya lengkap ke nomor pelanggan.';
+            : 'Membuka WhatsApp & menyiapkan pesan konfirmasi/nota lengkap ke nomor WhatsApp pemesan.';
     }
 
     // Nomor Tujuan WhatsApp:
-    // Pada mode pengguna/booking, otomatis terkunci ke Admin JAARS (085156696378) tanpa bisa diedit pengguna
+    // Pada mode pengguna/booking, otomatis terkunci ke Admin JAARS (085156696378) tanpa bisa diedit pengguna.
+    // Pada mode Admin, otomatis mengarah ke WhatsApp pemesan booking dan BISA DIEDIT bebas.
     if (waInput) {
-        if (isBooking) {
+        if (isUserBooking) {
             waInput.value = ADMIN_JAARS_PHONE;
             waInput.readOnly = true;
             waInput.className = 'w-full pl-8 pr-2.5 py-2 text-xs font-bold bg-slate-100 border border-slate-300 rounded-xl focus:outline-none text-slate-700 cursor-not-allowed select-none';
@@ -3589,19 +3590,28 @@ function openReceiptModal(tx) {
             waInput.readOnly = false;
             waInput.className = 'w-full pl-8 pr-2.5 py-2 text-xs font-bold bg-white border border-emerald-300 rounded-xl focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 text-slate-800 cursor-text';
             waInput.placeholder = 'Contoh: 08123456789';
-            waInput.title = 'Nomor WhatsApp pelanggan penerima struk';
+            waInput.title = 'Nomor WhatsApp pemesan booking (Bisa diedit)';
         }
     }
 
     // Setup WhatsApp button
     if (waBtn) {
-        waBtn.innerHTML = isBooking 
+        waBtn.innerHTML = isUserBooking 
             ? '<span>Kirim Ulang ke WA Admin</span> <span>➔</span>' 
-            : '<span>Kirim WA</span> <span>➔</span>';
+            : '<span>Kirim WA Pemesan</span> <span>➔</span>';
         waBtn.onclick = () => {
-            // Pada mode booking, SELALU kirim ke ADMIN_JAARS_PHONE tanpa bisa diubah pengguna
-            const destPhone = isBooking ? ADMIN_JAARS_PHONE : (waInput && waInput.value.trim() ? waInput.value.trim() : (tx.customerPhone || ''));
-            sendReceiptWhatsApp(tx, destPhone);
+            if (state.isAdmin) {
+                const targetPhone = waInput ? waInput.value.trim() : (tx.customerPhone || '');
+                if (targetPhone && tx.customerPhone !== targetPhone) {
+                    tx.customerPhone = targetPhone;
+                    saveTransactions();
+                    if (typeof renderHistory === 'function') renderHistory();
+                    if (typeof renderPaidServicesSummary === 'function') renderPaidServicesSummary();
+                }
+                openAdminSendBookingWaModal(tx.id);
+            } else {
+                sendReceiptWhatsApp(tx, ADMIN_JAARS_PHONE);
+            }
         };
     }
 
@@ -3761,27 +3771,64 @@ function formatWhatsAppNumber(phone) {
     return cleaned;
 }
 
-function sendReceiptWhatsApp(tx, targetPhone) {
-    const isBooking = (!state.isAdmin || tx.isBooking);
-    // Untuk mode booking pengguna, nomor tujuan selalu terkunci ke WhatsApp Admin JAARS (085156696378)
-    let phone = isBooking ? ADMIN_JAARS_PHONE : (targetPhone !== undefined ? targetPhone : (tx.customerPhone || ''));
+function sendReceiptWhatsApp(tx, targetPhone, customMessage) {
+    let phone = '';
+    if (state.isAdmin) {
+        phone = (targetPhone !== undefined && targetPhone !== null && targetPhone !== '') ? targetPhone : (tx.customerPhone || '');
+    } else {
+        phone = ADMIN_JAARS_PHONE;
+    }
     let cleanPhone = formatWhatsAppNumber(phone);
 
-    let itemsText = tx.items.map((it, idx) => 
+    let itemsText = (tx.items || []).map((it, idx) => 
         `${idx + 1}. *${it.name}* (${it.qty} ${it.unit}) = ${formatRupiah(it.price * it.qty)}`
     ).join('\n');
 
     const paymentLabel = tx.paymentMethod === 'cash' ? 'TUNAI' :
                          tx.paymentMethod === 'qris' ? 'QRIS' :
-                         tx.paymentMethod === 'transfer' ? `TRANSFER BANK BRI (${state.profile.bankAccount || '-'} a.n ${state.profile.bankHolder || '-'})` : 'BON / HUTANG';
+                         tx.paymentMethod === 'transfer' ? `TRANSFER BANK BRI (${state.profile?.bankAccount || '-'} a.n ${state.profile?.bankHolder || '-'})` : 'BON / HUTANG';
 
     let waMessage = '';
-    if (isBooking) {
+    if (customMessage) {
+        waMessage = customMessage;
+    } else if (state.isAdmin) {
+        // Format pesan dari Admin JAARS yang dikirimkan ke Pelanggan Pemesan Booking
+        const isVerified = tx.paymentValidated === true || tx.paymentStatus === 'verified';
+        const statusBadge = isVerified ? '✅ LUNAS (TERVERIFIKASI)' : '⏳ MENUNGGU KONFIRMASI / PENDING';
+        const customerName = tx.customerName || 'Bpk/Ibu Pelanggan';
+
+        waMessage = 
+`*🧾 KONFIRMASI PELAYANAN BENGKEL - ${(state.profile?.name || 'JAARS GARAGE').toUpperCase()}*
+Halo *${customerName}*,
+
+Terima kasih atas pesanan pelayanan Anda di *${state.profile?.name || 'JAARS Garage'}*. Berikut rincian transaksi / booking kendaraan Anda:
+
+==============================
+*KODE BOOKING / NOTA: #${tx.invoiceNo}*
+*Tanggal / Waktu   : ${formatDate(tx.date)}*
+*Kendaraan         : ${tx.vehicleType.toUpperCase()} ${tx.plateNumber ? `(${tx.plateNumber})` : ''}*
+${tx.orderNote && tx.orderNote !== '-' ? `*Catatan Pelanggan : ${tx.orderNote}*\n` : ''}==============================
+*📋 RINCIAN BIAYA & LAYANAN:*
+${itemsText}
+==============================
+*Subtotal    : ${formatRupiah(tx.subtotal)}*
+${tx.discountAmount > 0 ? `*Diskon      : -${formatRupiah(tx.discountAmount)}*\n` : ''}*TOTAL BIAYA : ${formatRupiah(tx.total)}*
+*Metode Bayar: ${paymentLabel}*
+*Status Bayar: ${statusBadge}*
+==============================
+
+📍 *Alamat Bengkel:* ${state.profile?.address || 'Jl. Karangrejo, Madiun'}
+📞 *Kontak Resmi:* ${state.profile?.phone || ADMIN_JAARS_PHONE}
+
+_${state.profile?.receiptFooter || 'Terima kasih atas kepercayaan Anda di JAARS Garage! Utamakan keselamatan berkendara.'}_
+`;
+    } else {
+        // Mode Pengguna/Booking: Kirim ke Admin JAARS
         waMessage = 
 `*📅 KONFIRMASI BOOKING PELAYANAN BENGKEL*
 *KODE BOOKING: #${tx.invoiceNo}*
 ==============================
-*Bengkel:* ${state.profile.name.toUpperCase()}
+*Bengkel:* ${(state.profile?.name || 'JAARS GARAGE').toUpperCase()}
 *Waktu Pemesanan:* ${formatDate(tx.date)}
 ==============================
 *👤 DATA PEMESAN:*
@@ -3797,26 +3844,6 @@ ${tx.discountAmount > 0 ? `*Diskon:* -${formatRupiah(tx.discountAmount)}\n` : ''
 *Metode Pembayaran:* ${paymentLabel}
 ==============================
 _Halo Admin JAARS Garage, saya telah memesan booking pelayanan di atas melalui website dengan *KODE BOOKING: #${tx.invoiceNo}*. Mohon konfirmasi jadwal dan teknisi bengkel. Terima kasih!_
-`;
-    } else {
-        waMessage = 
-`*🧾 NOTA BENGKEL - ${state.profile.name.toUpperCase()}*
-${state.profile.tagline ? `_${state.profile.tagline}_\n` : ''}${state.profile.address ? `📍 ${state.profile.address}\n` : ''}${state.profile.phone ? `📞 Kontak Bengkel: ${state.profile.phone}\n` : ''}
-==============================
-*No. Nota* : ${tx.invoiceNo}
-*Tanggal*  : ${formatDate(tx.date)}
-*Pelanggan*: ${tx.customerName || 'Pelanggan Umum'}
-*Kendaraan*: ${tx.vehicleType.toUpperCase()} ${tx.plateNumber ? `(${tx.plateNumber})` : ''}
-${tx.orderNote && tx.orderNote !== '-' ? `*Catatan*  : ${tx.orderNote}\n` : ''}
-*📋 RINCIAN BIAYA:*
-${itemsText}
-==============================
-*Subtotal* : ${formatRupiah(tx.subtotal)}
-${tx.discountAmount > 0 ? `*Diskon*   : -${formatRupiah(tx.discountAmount)}\n` : ''}*TOTAL     : ${formatRupiah(tx.total)}*
-*Metode*   : ${paymentLabel}
-${tx.paymentMethod === 'cash' ? `*Bayar*    : ${formatRupiah(tx.cash)}\n*Kembalian*: ${formatRupiah(tx.change)}\n` : ''}
-==============================
-_${state.profile.receiptFooter || 'Terima kasih atas kunjungan Anda. Utamakan keselamatan berkendara!'}_
 `;
     }
 
@@ -7026,22 +7053,232 @@ function handleImportExcelFile(e) {
     reader.readAsArrayBuffer(file);
 }
 
-window.sendDirectWhatsApp = function(txId) {
-    const tx = state.transactions.find(t => t.id === txId);
-    if (!tx) return;
+// --- ADMIN WHATSAPP DISPATCHER (BOOKING & NOTA) ---
+let currentAdminWaTx = null;
 
-    let phone = tx.customerPhone || '';
-    if (!phone) {
-        phone = prompt('Masukkan nomor WhatsApp pelanggan (contoh: 08123456789):', '');
-        if (phone === null) return; // User batalkan
-        phone = phone.trim();
-        if (phone) {
-            tx.customerPhone = phone;
-            saveTransactions();
-            renderHistory();
-        }
+function generateAdminWaMessage(tx, templateType = 'booking') {
+    if (!tx) return '';
+    const itemsText = (tx.items || []).map((it, idx) => 
+        `${idx + 1}. *${it.name}* (${it.qty} ${it.unit || 'unit'}) = ${formatRupiah(it.price * it.qty)}`
+    ).join('\n');
+
+    const paymentLabel = tx.paymentMethod === 'cash' ? 'TUNAI' :
+                         tx.paymentMethod === 'qris' ? 'QRIS KASIR' :
+                         tx.paymentMethod === 'transfer' ? `TRANSFER BANK BRI (${state.profile?.bankAccount || '-'} a.n ${state.profile?.bankHolder || '-'})` : 'BON / HUTANG';
+
+    const isVerified = tx.paymentValidated === true || tx.paymentStatus === 'verified';
+    const statusBadge = isVerified ? '✅ LUNAS (TERVERIFIKASI)' : '⏳ MENUNGGU KONFIRMASI / PENDING';
+    const customerName = tx.customerName || 'Bpk/Ibu Pelanggan';
+    const vehicleInfo = `${(tx.vehicleType || 'motor').toUpperCase()} ${tx.plateNumber && tx.plateNumber !== '-' ? `(${tx.plateNumber})` : ''}`;
+
+    if (templateType === 'paid') {
+        return `*✅ BUKTI PEMBAYARAN LUNAS - ${(state.profile?.name || 'JAARS GARAGE').toUpperCase()}*
+Halo *${customerName}*,
+
+Pembayaran untuk transaksi / booking Anda di JAARS Garage telah *BERHASIL DIVALIDASI & LUNAS*.
+
+==============================
+*KODE TRANSAKSI / NOTA: #${tx.invoiceNo}*
+*Nama Pelanggan       : ${customerName}*
+*Kendaraan            : ${vehicleInfo}*
+*Metode Pembayaran    : ${paymentLabel}*
+*Status Pembayaran    : ${statusBadge}*
+==============================
+*TOTAL SUDAH DIBAYAR  : ${formatRupiah(tx.total)}*
+==============================
+
+Terima kasih atas pembayaran Anda. Kendaraan Anda siap kami layani dengan maksimal di bengkel.
+
+📍 *Lokasi Bengkel:* ${state.profile?.address || 'Jl. Karangrejo, Madiun'}
+📞 *Telepon/WA Admin:* ${state.profile?.phone || ADMIN_JAARS_PHONE}`;
     }
-    sendReceiptWhatsApp(tx, phone);
+
+    if (templateType === 'ready') {
+        return `*🚗 KENDARAAN SELESAI & SIAP DIAMBIL - ${(state.profile?.name || 'JAARS GARAGE').toUpperCase()}*
+Halo *${customerName}*,
+
+Kabar baik! Pelayanan dan pengerjaan untuk kendaraan Anda (*${vehicleInfo}*) telah *SELESAI* dikerjakan oleh teknisi kami.
+
+==============================
+*KODE NOTA / BOOKING: #${tx.invoiceNo}*
+*Kendaraan          : ${vehicleInfo}*
+*Total Biaya        : ${formatRupiah(tx.total)}*
+*Status Pembayaran  : ${statusBadge}*
+==============================
+
+Kendaraan Anda sudah siap untuk diambil di bengkel JAARS Garage. Silakan tunjukkan pesan / kode booking ini ke kasir saat pengambilan.
+
+📍 *Lokasi Bengkel:* ${state.profile?.address || 'Jl. Karangrejo, Madiun'}
+📞 *Telepon/WA Admin:* ${state.profile?.phone || ADMIN_JAARS_PHONE}
+
+_Terima kasih banyak atas kunjungan Anda di JAARS Garage!_`;
+    }
+
+    if (templateType === 'receipt') {
+        return `*🧾 NOTA TRANSAKSI & RINCIAN BIAYA - ${(state.profile?.name || 'JAARS GARAGE').toUpperCase()}*
+Halo *${customerName}*,
+
+Berikut adalah rincian nota pelayanan dan sparepart kendaraan Anda di JAARS Garage:
+
+==============================
+*No. Nota  : #${tx.invoiceNo}*
+*Tanggal   : ${formatDate(tx.date)}*
+*Pelanggan : ${customerName}*
+*Kendaraan : ${vehicleInfo}*
+==============================
+*📋 RINCIAN BIAYA:*
+${itemsText}
+==============================
+*Subtotal  : ${formatRupiah(tx.subtotal)}*
+${tx.discountAmount > 0 ? `*Diskon    : -${formatRupiah(tx.discountAmount)}*\n` : ''}*TOTAL     : ${formatRupiah(tx.total)}*
+*Metode    : ${paymentLabel}*
+*Status    : ${statusBadge}*
+==============================
+
+_${state.profile?.receiptFooter || 'Terima kasih atas kepercayaan Anda. Utamakan keselamatan berkendara!'}_`;
+    }
+
+    // Default: 'booking'
+    return `*📅 KONFIRMASI BOOKING PELAYANAN - ${(state.profile?.name || 'JAARS GARAGE').toUpperCase()}*
+Halo *${customerName}*,
+
+Terima kasih telah melakukan pemesanan booking pelayanan bengkel di *JAARS Garage*.
+Pesanan booking Anda telah kami terima dengan rincian berikut:
+
+==============================
+*KODE BOOKING : #${tx.invoiceNo}*
+*Waktu Booking: ${formatDate(tx.date)}*
+*Kendaraan    : ${vehicleInfo}*
+${tx.orderNote && tx.orderNote !== '-' ? `*Catatan      : ${tx.orderNote}*\n` : ''}==============================
+*📋 DAFTAR LAYANAN / PRODUK:*
+${itemsText}
+==============================
+*TOTAL ESTIMASI: ${formatRupiah(tx.total)}*
+*Metode Bayar  : ${paymentLabel}*
+*Status Bayar  : ${statusBadge}*
+==============================
+
+Silakan datang ke bengkel sesuai jadwal pemesanan Anda. Teknisi kami siap melayani kendaraan Anda dengan sebaik mungkin.
+
+📍 *Lokasi Bengkel:* ${state.profile?.address || 'Jl. Karangrejo, Madiun'}
+📞 *Telepon/WA Admin:* ${state.profile?.phone || ADMIN_JAARS_PHONE}
+
+_Terima kasih atas kepercayaan Anda di JAARS Garage!_`;
+}
+
+function openAdminSendBookingWaModal(txId) {
+    const tx = (state.transactions || []).find(t => t.id === txId);
+    if (!tx) {
+        showToast('Transaksi tidak ditemukan.');
+        return;
+    }
+
+    currentAdminWaTx = tx;
+
+    const modal = document.getElementById('modal-admin-send-booking-wa');
+    const subtitleEl = document.getElementById('admin-wa-modal-subtitle');
+    const infoCard = document.getElementById('admin-wa-info-card');
+    const phoneInput = document.getElementById('admin-wa-phone-input');
+    const messageTextarea = document.getElementById('admin-wa-message-textarea');
+
+    if (!modal) return;
+
+    if (subtitleEl) {
+        subtitleEl.textContent = `Kode Booking / Nota: #${tx.invoiceNo} • Mode Admin: Bebas Diedit`;
+    }
+
+    if (infoCard) {
+        const isVerified = tx.paymentValidated === true || tx.paymentStatus === 'verified';
+        const paymentLabel = tx.paymentMethod === 'cash' ? 'Tunai' :
+                             tx.paymentMethod === 'qris' ? 'QRIS' :
+                             tx.paymentMethod === 'transfer' ? 'Transfer Bank' : 'Bon / Hutang';
+
+        infoCard.innerHTML = `
+            <div class="flex items-center justify-between flex-wrap gap-1 font-bold">
+                <span class="text-slate-800">${tx.customerName || 'Pelanggan'} (${(tx.vehicleType || 'motor').toUpperCase()}: ${tx.plateNumber || '-'})</span>
+                <span class="text-emerald-700">${formatRupiah(tx.total)}</span>
+            </div>
+            <div class="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap">
+                <span>Metode: <strong>${paymentLabel}</strong></span>
+                <span>•</span>
+                <span class="${isVerified ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}">${isVerified ? '✅ Lunas (Tervalidasi)' : '⏳ Menunggu Validasi'}</span>
+                <span>•</span>
+                <span>${(tx.items || []).length} layanan</span>
+            </div>
+        `;
+    }
+
+    if (phoneInput) {
+        phoneInput.value = tx.customerPhone || '';
+        phoneInput.readOnly = false;
+    }
+
+    const defaultTemplate = (tx.paymentValidated === true || tx.paymentStatus === 'verified') ? 'paid' : (tx.isBooking ? 'booking' : 'receipt');
+    if (messageTextarea) {
+        messageTextarea.value = generateAdminWaMessage(tx, defaultTemplate);
+    }
+
+    modal.classList.remove('hidden');
+    state.activeModal = modal;
+    if (phoneInput) {
+        setTimeout(() => phoneInput.focus(), 100);
+    }
+}
+
+function applyAdminWaTemplate(templateType) {
+    if (!currentAdminWaTx) return;
+    const messageTextarea = document.getElementById('admin-wa-message-textarea');
+    if (messageTextarea) {
+        messageTextarea.value = generateAdminWaMessage(currentAdminWaTx, templateType);
+        showToast(`Template "${templateType}" diterapkan.`);
+    }
+}
+
+function submitAdminBookingWhatsApp() {
+    if (!currentAdminWaTx) return;
+    const phoneInput = document.getElementById('admin-wa-phone-input');
+    const messageTextarea = document.getElementById('admin-wa-message-textarea');
+
+    const phone = phoneInput ? phoneInput.value.trim() : (currentAdminWaTx.customerPhone || '');
+    const cleanPhone = formatWhatsAppNumber(phone);
+
+    if (!cleanPhone) {
+        alert('Silakan masukkan nomor WhatsApp pemesan yang valid (contoh: 08123456789 atau 628123456789).');
+        if (phoneInput) phoneInput.focus();
+        return;
+    }
+
+    // Simpan perubahan nomor WA ke transaksi jika diedit oleh admin
+    if (currentAdminWaTx.customerPhone !== phone) {
+        currentAdminWaTx.customerPhone = phone;
+        saveTransactions();
+        if (typeof renderHistory === 'function') renderHistory();
+        if (typeof renderPaidServicesSummary === 'function') renderPaidServicesSummary();
+        if (typeof triggerAutoSyncToCloud === 'function') triggerAutoSyncToCloud('Update No WA Pemesan');
+    }
+
+    const message = messageTextarea ? messageTextarea.value : generateAdminWaMessage(currentAdminWaTx, 'booking');
+
+    const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+    window.open(waUrl, '_blank');
+
+    closeModal();
+    showToast(`✅ Membuka WhatsApp untuk mengirim pesan ke ${cleanPhone}`);
+}
+
+window.openAdminSendBookingWaModal = openAdminSendBookingWaModal;
+window.applyAdminWaTemplate = applyAdminWaTemplate;
+window.submitAdminBookingWhatsApp = submitAdminBookingWhatsApp;
+window.generateAdminWaMessage = generateAdminWaMessage;
+
+window.sendDirectWhatsApp = function(txId) {
+    if (state.isAdmin) {
+        openAdminSendBookingWaModal(txId);
+    } else {
+        const tx = (state.transactions || []).find(t => t.id === txId);
+        if (!tx) return;
+        sendReceiptWhatsApp(tx, ADMIN_JAARS_PHONE);
+    }
 };
 
 window.viewHistoryReceipt = function(txId) {
