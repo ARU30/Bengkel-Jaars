@@ -646,5 +646,191 @@ const DEFAULT_TRANSACTIONS = [
         "cash": 40000,
         "change": 0,
         "paymentMethod": "transfer"
+    },
+    {
+        "id": "INV-JAARS-004",
+        "invoiceNo": "INV-848910",
+        "date": "2026-11-15T09:10:00.000Z",
+        "customerName": "Bpk. Agus Prasetyo",
+        "customerPhone": "081234567890",
+        "plateNumber": "AE 4582 BC",
+        "vehicleType": "motor",
+        "orderNote": "Cuci motor salju rutin",
+        "items": [
+            {
+                "id": "cu-01",
+                "categoryId": "cuci",
+                "name": "Cuci Motor Reguler / Salju",
+                "desc": "Cuci bodi salju wax + semir ban",
+                "unit": "per motor",
+                "price": 15000,
+                "qty": 1
+            }
+        ],
+        "subtotal": 15000,
+        "discountType": "nominal",
+        "discountValue": 0,
+        "discountAmount": 0,
+        "total": 15000,
+        "cash": 15000,
+        "change": 0,
+        "paymentMethod": "cash",
+        "paymentValidated": true,
+        "paymentStatus": "verified"
+    },
+    {
+        "id": "INV-JAARS-005",
+        "invoiceNo": "INV-848622",
+        "date": "2026-11-12T14:30:00.000Z",
+        "customerName": "Bpk. Agus Prasetyo",
+        "customerPhone": "081234567890",
+        "plateNumber": "AE 4582 BC",
+        "vehicleType": "motor",
+        "orderNote": "Cuci motor mingguan",
+        "items": [
+            {
+                "id": "cu-01",
+                "categoryId": "cuci",
+                "name": "Cuci Motor Reguler / Salju",
+                "desc": "Cuci bodi salju wax + semir ban",
+                "unit": "per motor",
+                "price": 15000,
+                "qty": 1
+            }
+        ],
+        "subtotal": 15000,
+        "discountType": "nominal",
+        "discountValue": 0,
+        "discountAmount": 0,
+        "total": 15000,
+        "cash": 15000,
+        "change": 0,
+        "paymentMethod": "cash",
+        "paymentValidated": true,
+        "paymentStatus": "verified"
+    },
+    {
+        "id": "INV-JAARS-006",
+        "invoiceNo": "INV-848315",
+        "date": "2026-11-09T10:00:00.000Z",
+        "customerName": "Bpk. Agus Prasetyo",
+        "customerPhone": "081234567890",
+        "plateNumber": "AE 4582 BC",
+        "vehicleType": "motor",
+        "orderNote": "Cuci motor salju + semir ban",
+        "items": [
+            {
+                "id": "cu-01",
+                "categoryId": "cuci",
+                "name": "Cuci Motor Reguler / Salju",
+                "desc": "Cuci bodi salju wax + semir ban",
+                "unit": "per motor",
+                "price": 15000,
+                "qty": 1
+            }
+        ],
+        "subtotal": 15000,
+        "discountType": "nominal",
+        "discountValue": 0,
+        "discountAmount": 0,
+        "total": 15000,
+        "cash": 15000,
+        "change": 0,
+        "paymentMethod": "cash",
+        "paymentValidated": true,
+        "paymentStatus": "verified"
+    },
+    {
+        "id": "INV-JAARS-007",
+        "invoiceNo": "INV-848002",
+        "date": "2026-11-06T11:20:00.000Z",
+        "customerName": "Bpk. Agus Prasetyo",
+        "customerPhone": "081234567890",
+        "plateNumber": "AE 4582 BC",
+        "vehicleType": "motor",
+        "orderNote": "Cuci motor salju",
+        "items": [
+            {
+                "id": "cu-01",
+                "categoryId": "cuci",
+                "name": "Cuci Motor Reguler / Salju",
+                "desc": "Cuci bodi salju wax + semir ban",
+                "unit": "per motor",
+                "price": 15000,
+                "qty": 1
+            }
+        ],
+        "subtotal": 15000,
+        "discountType": "nominal",
+        "discountValue": 0,
+        "discountAmount": 0,
+        "total": 15000,
+        "cash": 15000,
+        "change": 0,
+        "paymentMethod": "cash",
+        "paymentValidated": true,
+        "paymentStatus": "verified"
+    },
+    {
+        "id": "INV-JAARS-008",
+        "invoiceNo": "INV-847712",
+        "date": "2026-11-03T16:15:00.000Z",
+        "customerName": "Bpk. Agus Prasetyo",
+        "customerPhone": "081234567890",
+        "plateNumber": "AE 4582 BC",
+        "vehicleType": "motor",
+        "orderNote": "Cuci bodi motor",
+        "items": [
+            {
+                "id": "cu-01",
+                "categoryId": "cuci",
+                "name": "Cuci Motor Reguler / Salju",
+                "desc": "Cuci bodi salju wax + semir ban",
+                "unit": "per motor",
+                "price": 15000,
+                "qty": 1
+            }
+        ],
+        "subtotal": 15000,
+        "discountType": "nominal",
+        "discountValue": 0,
+        "discountAmount": 0,
+        "total": 15000,
+        "cash": 15000,
+        "change": 0,
+        "paymentMethod": "cash",
+        "paymentValidated": true,
+        "paymentStatus": "verified"
+    },
+    {
+        "id": "INV-JAARS-009",
+        "invoiceNo": "INV-847401",
+        "date": "2026-10-30T08:45:00.000Z",
+        "customerName": "Bpk. Agus Prasetyo",
+        "customerPhone": "081234567890",
+        "plateNumber": "AE 4582 BC",
+        "vehicleType": "motor",
+        "orderNote": "Cuci motor salju pertama siklus",
+        "items": [
+            {
+                "id": "cu-01",
+                "categoryId": "cuci",
+                "name": "Cuci Motor Reguler / Salju",
+                "desc": "Cuci bodi salju wax + semir ban",
+                "unit": "per motor",
+                "price": 15000,
+                "qty": 1
+            }
+        ],
+        "subtotal": 15000,
+        "discountType": "nominal",
+        "discountValue": 0,
+        "discountAmount": 0,
+        "total": 15000,
+        "cash": 15000,
+        "change": 0,
+        "paymentMethod": "cash",
+        "paymentValidated": true,
+        "paymentStatus": "verified"
     }
 ];

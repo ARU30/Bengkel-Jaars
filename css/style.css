@@ -55,16 +55,16 @@
     }
 
     #print-receipt-section,
-    #print-receipt-section * {
-        visibility: visible;
-    }
-
+    #print-receipt-section *,
+    #print-free-wash-section,
+    #print-free-wash-section *,
     #print-daily-summary-section,
     #print-daily-summary-section * {
         visibility: visible;
     }
 
-    #print-receipt-section {
+    #print-receipt-section,
+    #print-free-wash-section {
         position: absolute;
         left: 0;
         top: 0;

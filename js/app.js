@@ -29,6 +29,7 @@ let state = {
     summaryFilterPeriod: 'today', // Selalu 'today' untuk membedakan dengan Laporan & Riwayat
     summaryFilterPayment: 'all', // 'all' | 'cash' | 'qris' | 'transfer' | 'bon'
     summaryFilterVehicle: 'all', // 'all' | 'motor' | 'mobil'
+    summaryFilterValidation: 'all', // 'all' | 'pending' | 'verified' | 'qris' | 'transfer'
     summarySearchKeyword: '',
 
     // Active Tab View
@@ -50,6 +51,10 @@ let state = {
     historyFilter: 'month', // 'today' | 'week' | 'month' | 'year' | 'all'
     selectedFilterMonth: new Date().getMonth().toString(), // '0'..'11' or 'all'
     selectedFilterYear: new Date().getFullYear(),
+    
+    // Program Loyalitas Cuci Kendaraan (Cuci 7x Gratis 1x)
+    freeWashVouchers: JSON.parse(localStorage.getItem('bengkel_free_wash_vouchers') || '[]'),
+    activeLoyaltySubTab: 'customers', // 'customers' | 'vouchers'
     
     // Cloud Synchronization State (Vercel & Multi-Device)
     cloudSyncStatus: 'synced', // 'synced' | 'syncing' | 'offline' | 'error'
@@ -138,6 +143,18 @@ function loadData() {
         const savedLastSync = localStorage.getItem('bengkel_last_sync_time');
         if (savedLastSync) state.lastSyncTime = Number(savedLastSync);
 
+        const savedFreeWashVouchers = localStorage.getItem('bengkel_free_wash_vouchers');
+        if (savedFreeWashVouchers) {
+            try {
+                const parsedVouchers = JSON.parse(savedFreeWashVouchers);
+                state.freeWashVouchers = Array.isArray(parsedVouchers) ? parsedVouchers : [];
+            } catch (e) {
+                state.freeWashVouchers = [];
+            }
+        } else {
+            state.freeWashVouchers = [];
+        }
+
         // Check if admin is currently logged in in this session
         state.isAdmin = sessionStorage.getItem('bengkel_is_admin') === 'true';
     } catch (e) {
@@ -147,6 +164,7 @@ function loadData() {
         state.services = [ ...DEFAULT_SERVICES ];
         state.catalog = [ ...DEFAULT_CATALOG ];
         state.transactions = typeof DEFAULT_TRANSACTIONS !== 'undefined' ? [ ...DEFAULT_TRANSACTIONS ] : [];
+        state.freeWashVouchers = [];
     }
 }
 
@@ -551,11 +569,16 @@ function calculateTotals() {
     const subtotal = state.cart.reduce((sum, item) => sum + (Number(item.price) * Number(item.qty)), 0);
     
     let discountAmount = 0;
-    if (state.discountType === 'percent') {
-        const pct = Math.min(100, Math.max(0, Number(state.discountValue) || 0));
-        discountAmount = Math.round(subtotal * (pct / 100));
+    // Fitur diskon HANYA bisa dilakukan di sistem kasir admin
+    if (state.isAdmin) {
+        if (state.discountType === 'percent') {
+            const pct = Math.min(100, Math.max(0, Number(state.discountValue) || 0));
+            discountAmount = Math.round(subtotal * (pct / 100));
+        } else {
+            discountAmount = Math.min(subtotal, Math.max(0, Number(state.discountValue) || 0));
+        }
     } else {
-        discountAmount = Math.min(subtotal, Math.max(0, Number(state.discountValue) || 0));
+        discountAmount = 0;
     }
 
     const total = Math.max(0, subtotal - discountAmount);
@@ -619,17 +642,30 @@ function initUI() {
         });
     }
 
-    // Discount Inputs
+    // Discount Inputs (Khusus Sistem Admin)
     const discountTypeSelect = document.getElementById('discount-type');
     const discountValueInput = document.getElementById('discount-value');
     if (discountTypeSelect) {
         discountTypeSelect.addEventListener('change', (e) => {
+            if (!state.isAdmin) {
+                state.discountType = 'nominal';
+                state.discountValue = 0;
+                e.target.value = 'nominal';
+                renderCart();
+                return;
+            }
             state.discountType = e.target.value;
             renderCart();
         });
     }
     if (discountValueInput) {
         discountValueInput.addEventListener('input', (e) => {
+            if (!state.isAdmin) {
+                state.discountValue = 0;
+                e.target.value = '0';
+                renderCart();
+                return;
+            }
             state.discountValue = Number(e.target.value) || 0;
             renderCart();
         });
@@ -753,10 +789,12 @@ function initUI() {
     });
     document.getElementById('input-customer-phone')?.addEventListener('input', (e) => {
         state.customerPhone = e.target.value;
+        if (typeof updateCartWashLoyaltyIndicator === 'function') updateCartWashLoyaltyIndicator();
     });
     document.getElementById('input-plate-number')?.addEventListener('input', (e) => {
         state.plateNumber = e.target.value.toUpperCase();
         e.target.value = state.plateNumber;
+        if (typeof updateCartWashLoyaltyIndicator === 'function') updateCartWashLoyaltyIndicator();
     });
     document.getElementById('input-order-notes')?.addEventListener('input', (e) => {
         state.orderNote = e.target.value;
@@ -998,6 +1036,13 @@ function initUI() {
     });
 
     // Ringkasan Pembayaran (Khusus Hari Ini) Filter & Search Listeners
+    const summaryValSelect = document.getElementById('select-summary-validation');
+    if (summaryValSelect) {
+        summaryValSelect.addEventListener('change', (e) => {
+            setSummaryValidationFilter(e.target.value);
+        });
+    }
+
     const summaryPaySelect = document.getElementById('select-summary-payment');
     if (summaryPaySelect) {
         summaryPaySelect.addEventListener('change', (e) => {
@@ -1039,6 +1084,7 @@ function renderAll() {
     renderCatalogPanel();
     renderPaidServicesSummary();
     renderShopStatus();
+    if (typeof updateLoyaltyBadgesAndCounts === 'function') updateLoyaltyBadgesAndCounts();
 }
 
 // --- WORKSHOP HEADER & PROFILE ---
@@ -2177,6 +2223,11 @@ function updateAdminUI() {
     const btnCheckoutIcon = document.getElementById('btn-checkout-icon');
     const btnCheckoutText = document.getElementById('btn-checkout-text');
 
+    const discountWrapper = document.getElementById('cart-discount-wrapper');
+    const discountRow = document.getElementById('summary-discount-row');
+    const discountInput = document.getElementById('discount-value');
+    const discountTypeSelect = document.getElementById('discount-type');
+
     if (state.isAdmin) {
         if (navGroup) {
             navGroup.classList.remove('hidden');
@@ -2206,10 +2257,15 @@ function updateAdminUI() {
             paymentModeBadge.textContent = 'Admin: Semua Metode (Tunai, QRIS, BRI, Bon)';
             paymentModeBadge.className = 'text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-full';
         }
+
+        // Tampilkan Fitur Diskon Khusus Kasir Admin
+        if (discountWrapper) discountWrapper.classList.remove('hidden');
+        if (discountRow) discountRow.classList.remove('hidden');
+
         if (navPosIcon) navPosIcon.textContent = '📅';
         if (navPosLabel) navPosLabel.innerHTML = '<span class="hidden md:inline">Booking</span> Pelayanan';
         if (cartPanelTitle) cartPanelTitle.textContent = '🧮 Nota Kasir & Booking';
-        if (cartPanelDesc) cartPanelDesc.textContent = 'Mode kasir admin: input pesanan, pembayaran tunai/non-tunai & cetak nota';
+        if (cartPanelDesc) cartPanelDesc.textContent = 'Mode kasir admin: input pesanan, diskon kasir, pembayaran tunai/non-tunai & cetak nota';
         if (btnCheckoutIcon) btnCheckoutIcon.textContent = '🧾';
         if (btnCheckoutText) btnCheckoutText.textContent = 'Selesaikan & Cetak Struk';
     } else {
@@ -2241,6 +2297,15 @@ function updateAdminUI() {
             paymentModeBadge.textContent = 'Non-Tunai (QRIS & Transfer BRI)';
             paymentModeBadge.className = 'text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-full';
         }
+
+        // Hapus & Sembunyikan Fitur Diskon di Sistem Pengguna/User (Hanya Bisa Dilakukan di Sistem Admin)
+        if (discountWrapper) discountWrapper.classList.add('hidden');
+        if (discountRow) discountRow.classList.add('hidden');
+        state.discountValue = 0;
+        state.discountType = 'nominal';
+        if (discountInput) discountInput.value = '0';
+        if (discountTypeSelect) discountTypeSelect.value = 'nominal';
+
         if (navPosIcon) navPosIcon.textContent = '📅';
         if (navPosLabel) navPosLabel.innerHTML = '<span class="hidden md:inline">Booking</span> Pelayanan';
         if (cartPanelTitle) cartPanelTitle.textContent = '📅 Form Booking Pelayanan';
@@ -2271,6 +2336,7 @@ function updateAdminUI() {
     renderPaymentSections();
     renderCatalogProducts();
     renderPaidServicesSummary();
+    if (typeof updateLoyaltyBadgesAndCounts === 'function') updateLoyaltyBadgesAndCounts();
 }
 
 function openAdminLoginModal() {
@@ -2712,6 +2778,7 @@ function renderCart() {
     }).join('');
 
     renderCartTotalsOnly();
+    if (typeof updateCartWashLoyaltyIndicator === 'function') updateCartWashLoyaltyIndicator();
 }
 
 function renderCartTotalsOnly() {
@@ -2732,6 +2799,15 @@ function renderCartTotalsOnly() {
     if (subtotalEl) subtotalEl.textContent = formatRupiah(totals.subtotal);
     if (discountEl) discountEl.textContent = `- ${formatRupiah(totals.discountAmount)}`;
     if (grandTotalEl) grandTotalEl.textContent = formatRupiah(totals.total);
+
+    const discountRow = document.getElementById('summary-discount-row');
+    if (discountRow) {
+        if (state.isAdmin) {
+            discountRow.classList.remove('hidden');
+        } else {
+            discountRow.classList.add('hidden');
+        }
+    }
 
     if (qrisAmountEl) qrisAmountEl.textContent = formatRupiah(totals.total);
     if (qrisZoomAmountEl) qrisZoomAmountEl.textContent = formatRupiah(totals.total);
@@ -3037,6 +3113,8 @@ function processCheckout() {
 
     const isBookingMode = !state.isAdmin;
     const bookingCode = `INV-${Date.now().toString().slice(-6)}`;
+    const isCash = state.paymentMethod === 'cash';
+    const isBon = state.paymentMethod === 'bon';
 
     const transaction = {
         id: generateId('INV'),
@@ -3049,22 +3127,52 @@ function processCheckout() {
         orderNote: state.orderNote || '-',
         items: JSON.parse(JSON.stringify(state.cart)),
         subtotal: totals.subtotal,
-        discountType: state.discountType,
-        discountValue: state.discountValue,
-        discountAmount: totals.discountAmount,
-        total: totals.total,
-        cash: state.paymentMethod === 'cash' ? totals.cash : totals.total,
-        change: state.paymentMethod === 'cash' ? totals.change : 0,
+        discountType: state.isAdmin ? state.discountType : 'nominal',
+        discountValue: state.isAdmin ? state.discountValue : 0,
+        discountAmount: state.isAdmin ? totals.discountAmount : 0,
+        total: state.isAdmin ? totals.total : totals.subtotal,
+        cash: isCash ? totals.cash : (state.isAdmin ? totals.total : totals.subtotal),
+        change: isCash ? totals.change : 0,
         paymentMethod: state.paymentMethod,
-        isBooking: isBookingMode
+        isBooking: isBookingMode,
+        // Status Validasi Pembayaran (QRIS / Transfer / Tunai / Bon)
+        paymentValidated: isCash ? true : false,
+        paymentStatus: isCash ? 'verified' : (isBon ? 'bon' : 'pending'),
+        validatedAt: isCash ? new Date().toISOString() : null,
+        validatedBy: isCash ? (state.isAdmin ? 'Kasir Admin' : 'Sistem Kasir') : null
     };
 
     // Save transaction
     state.transactions.unshift(transaction);
     saveTransactions();
 
+    // Tandai jika transaksi ini menggunakan / menebus Voucher Cuci Gratis
+    (transaction.items || []).forEach(it => {
+        if (it.freeWashVoucherId && state.freeWashVouchers) {
+            const v = state.freeWashVouchers.find(x => x.id === it.freeWashVoucherId);
+            if (v) {
+                v.status = 'redeemed';
+                v.redeemedAt = new Date().toISOString();
+                v.redeemedInvoiceNo = transaction.invoiceNo;
+            }
+        }
+    });
+    if (typeof saveFreeWashVouchers === 'function') saveFreeWashVouchers();
+
     // Tampilkan modal bukti booking / nota
     openReceiptModal(transaction);
+
+    // Periksa pencapaian loyalitas cuci (jika transaksi memiliki layanan cuci)
+    if (typeof hasWashService === 'function' && hasWashService(transaction)) {
+        const washStats = getCustomerWashHistory(transaction.plateNumber || transaction.customerPhone);
+        if (washStats.washCount % 7 === 0 && washStats.washCount > 0) {
+            setTimeout(() => {
+                if (confirm(`🎉 SELAMAT! Pelanggan dengan Plat Nomor ${transaction.plateNumber || 'ini'} telah mencapai 7 Kunjungan Cuci di JAARS Garage!\n\nApakah Anda ingin menerbitkan & mencetak STRUK BUKTI PENUKARAN CUCI GRATIS sekarang?`)) {
+                    issueFreeWashVoucherForCustomer(transaction.plateNumber || transaction.customerPhone);
+                }
+            }, 800);
+        }
+    }
 
     // Pada sistem pengguna, langsung kirimkan kode booking ke WhatsApp Admin 085156696378
     if (isBookingMode) {
@@ -3101,6 +3209,7 @@ function processCheckout() {
     renderCatalog();
     renderHistory();
     renderPaidServicesSummary();
+    if (typeof updateCartWashLoyaltyIndicator === 'function') updateCartWashLoyaltyIndicator();
 }
 
 function openReceiptModal(tx) {
@@ -3285,6 +3394,14 @@ function generateReceiptHTML(tx) {
                     <span>Metode:</span>
                     <span style="font-weight: bold;">${paymentLabel}</span>
                 </div>
+                ${(tx.paymentMethod === 'qris' || tx.paymentMethod === 'transfer') ? `
+                    <div style="display: flex; justify-content: space-between; font-weight: bold; margin-top: 2px;">
+                        <span>Status Validasi:</span>
+                        <span style="color: ${isTransactionPaymentValidated(tx) ? '#059669' : '#d97706'};">
+                            ${isTransactionPaymentValidated(tx) ? '✅ LUNAS (TERVERIFIKASI)' : '⏳ MENUNGGU CEK REKENING'}
+                        </span>
+                    </div>
+                ` : ''}
                 ${tx.paymentMethod === 'cash' ? `
                     <div style="display: flex; justify-content: space-between;">
                         <span>Uang Tunai:</span>
@@ -3452,6 +3569,1084 @@ function getFilteredTransactions() {
     });
 }
 
+// --- HELPER STATUS VALIDASI PEMBAYARAN (QRIS / TRANSFER / TUNAI / BON) ---
+function isTransactionPaymentValidated(tx) {
+    if (!tx) return false;
+    if (tx.paymentMethod === 'cash') return true;
+    if (tx.paymentMethod === 'bon') return false;
+    // QRIS & Transfer:
+    return tx.paymentValidated === true || tx.paymentStatus === 'verified';
+}
+
+function toggleTransactionPaymentValidation(txId) {
+    const tx = (state.transactions || []).find(t => t.id === txId);
+    if (!tx) return;
+
+    const currentlyValidated = isTransactionPaymentValidated(tx);
+    if (!currentlyValidated) {
+        tx.paymentValidated = true;
+        tx.paymentStatus = 'verified';
+        tx.validatedAt = new Date().toISOString();
+        tx.validatedBy = 'Admin JAARS';
+        showToast(`✅ Pembayaran Nota #${tx.invoiceNo} (${(tx.paymentMethod || '').toUpperCase()}) berhasil divalidasi LUNAS!`);
+    } else {
+        tx.paymentValidated = false;
+        tx.paymentStatus = 'pending';
+        tx.validatedAt = null;
+        tx.validatedBy = null;
+        showToast(`⏳ Status pembayaran Nota #${tx.invoiceNo} dikembalikan ke Menunggu Validasi.`);
+    }
+
+    saveTransactions();
+    renderPaidServicesSummary();
+    if (typeof renderHistory === 'function') renderHistory();
+}
+
+function validateAllPendingPaymentsToday() {
+    const now = new Date();
+    const isTxToday = (tx) => {
+        if (!tx.date) return false;
+        const txDate = new Date(tx.date);
+        if (isNaN(txDate.getTime())) return false;
+        return txDate.getDate() === now.getDate() &&
+               txDate.getMonth() === now.getMonth() &&
+               txDate.getFullYear() === now.getFullYear();
+    };
+
+    const pendingList = (state.transactions || []).filter(tx => {
+        return isTxToday(tx) && 
+               (tx.paymentMethod === 'qris' || tx.paymentMethod === 'transfer') && 
+               !isTransactionPaymentValidated(tx);
+    });
+
+    if (pendingList.length === 0) {
+        showToast('Seluruh transaksi QRIS & Transfer hari ini sudah tervalidasi.');
+        return;
+    }
+
+    if (!confirm(`Konfirmasi: Validasi ${pendingList.length} pembayaran QRIS / Transfer hari ini sebagai LUNAS? Pastikan seluruh dana sudah masuk ke rekening/settlement.`)) {
+        return;
+    }
+
+    const nowIso = new Date().toISOString();
+    pendingList.forEach(tx => {
+        tx.paymentValidated = true;
+        tx.paymentStatus = 'verified';
+        tx.validatedAt = nowIso;
+        tx.validatedBy = 'Admin JAARS';
+    });
+
+    saveTransactions();
+    renderPaidServicesSummary();
+    if (typeof renderHistory === 'function') renderHistory();
+    showToast(`✅ Berhasil memvalidasi ${pendingList.length} transaksi pembayaran sebagai LUNAS!`);
+}
+
+function setSummaryValidationFilter(filterKey) {
+    state.summaryFilterValidation = filterKey;
+    const selectEl = document.getElementById('select-summary-validation');
+    if (selectEl) {
+        if (['all', 'pending', 'verified'].includes(filterKey)) {
+            selectEl.value = filterKey;
+        } else {
+            selectEl.value = 'all';
+        }
+    }
+    renderPaidServicesSummary();
+}
+
+window.isTransactionPaymentValidated = isTransactionPaymentValidated;
+window.toggleTransactionPaymentValidation = toggleTransactionPaymentValidation;
+window.validateAllPendingPaymentsToday = validateAllPendingPaymentsToday;
+window.setSummaryValidationFilter = setSummaryValidationFilter;
+
+// ==============================================================
+// SISTEM LOYALITAS PELANGGAN CUCI KENDARAAN (7X CUCI GRATIS 1X)
+// DENGAN NOTA / STRUK BUKTI PENUKARAN TERSENDIRI
+// ==============================================================
+
+function isWashItem(item) {
+    if (!item) return false;
+    const catId = (item.categoryId || '').toLowerCase();
+    const name = (item.name || '').toLowerCase();
+    return catId === 'cuci' || name.includes('cuci') || name.includes('wash') || name.includes('snow');
+}
+
+function hasWashService(tx) {
+    if (!tx || !Array.isArray(tx.items)) return false;
+    return tx.items.some(it => isWashItem(it));
+}
+
+function normalizePlate(plate) {
+    return (plate || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+}
+
+function normalizePhone(phone) {
+    let digits = (phone || '').replace(/\D/g, '');
+    if (digits.startsWith('62')) digits = '0' + digits.slice(2);
+    return digits;
+}
+
+function saveFreeWashVouchers() {
+    localStorage.setItem('bengkel_free_wash_vouchers', JSON.stringify(state.freeWashVouchers || []));
+    if (typeof triggerAutoSyncToCloud === 'function') {
+        triggerAutoSyncToCloud('Voucher Cuci Gratis');
+    }
+}
+
+function getCustomerWashHistory(identifier) {
+    if (!identifier) {
+        return {
+            washCount: 0,
+            washTransactions: [],
+            customerName: '',
+            customerPhone: '',
+            plateNumber: '',
+            vehicleType: 'motor',
+            vouchers: [],
+            activeVouchers: [],
+            redeemedVouchers: [],
+            stampsInCycle: 0,
+            isEligibleForFreeWash: false
+        };
+    }
+
+    const normId = normalizePlate(identifier);
+    const normPhoneId = normalizePhone(identifier);
+
+    const washTxList = (state.transactions || []).filter(tx => {
+        if (!hasWashService(tx)) return false;
+        const pNorm = normalizePlate(tx.plateNumber);
+        const phNorm = normalizePhone(tx.customerPhone);
+        return (normId && pNorm && pNorm === normId) || 
+               (normPhoneId && phNorm && phNorm === normPhoneId);
+    }).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    const washCount = washTxList.length;
+    const latestTx = washTxList.length > 0 ? washTxList[washTxList.length - 1] : null;
+
+    const customerVouchers = (state.freeWashVouchers || []).filter(v => {
+        const vPlate = normalizePlate(v.plateNumber);
+        const vPhone = normalizePhone(v.customerPhone);
+        return (normId && vPlate && vPlate === normId) ||
+               (normPhoneId && vPhone && vPhone === normPhoneId);
+    });
+
+    const activeVouchers = customerVouchers.filter(v => v.status === 'active');
+    const redeemedVouchers = customerVouchers.filter(v => v.status === 'redeemed');
+
+    const stampsInCycle = washCount > 0 ? ((washCount % 7 === 0) ? 7 : (washCount % 7)) : 0;
+    const vouchersAllowed = Math.floor(washCount / 7);
+    const isEligibleForFreeWash = washCount >= 7 && (customerVouchers.length < vouchersAllowed || (stampsInCycle === 7 && activeVouchers.length === 0));
+
+    return {
+        washCount,
+        washTransactions: washTxList,
+        customerName: latestTx ? latestTx.customerName : '',
+        customerPhone: latestTx ? latestTx.customerPhone : '',
+        plateNumber: latestTx ? latestTx.plateNumber : identifier,
+        vehicleType: latestTx ? latestTx.vehicleType : 'motor',
+        vouchers: customerVouchers,
+        activeVouchers,
+        redeemedVouchers,
+        stampsInCycle,
+        isEligibleForFreeWash
+    };
+}
+
+function getAllWashCustomers() {
+    const map = new Map();
+
+    (state.transactions || []).forEach(tx => {
+        if (!hasWashService(tx)) return;
+        const plate = (tx.plateNumber && tx.plateNumber !== '-') ? tx.plateNumber : '';
+        const phone = tx.customerPhone || '';
+        const key = normalizePlate(plate) || normalizePhone(phone);
+        if (!key) return;
+
+        if (!map.has(key)) {
+            map.set(key, {
+                key,
+                plateNumber: plate || '-',
+                customerName: tx.customerName || 'Pelanggan Cuci',
+                customerPhone: phone,
+                vehicleType: tx.vehicleType || 'motor',
+                washTransactions: [],
+                lastDate: tx.date
+            });
+        }
+        const record = map.get(key);
+        record.washTransactions.push(tx);
+        if (plate && (!record.plateNumber || record.plateNumber === '-')) record.plateNumber = plate;
+        if (tx.customerName && record.customerName === 'Pelanggan Cuci') record.customerName = tx.customerName;
+        if (phone && !record.customerPhone) record.customerPhone = phone;
+        if (new Date(tx.date) > new Date(record.lastDate)) {
+            record.lastDate = tx.date;
+            if (tx.vehicleType) record.vehicleType = tx.vehicleType;
+        }
+    });
+
+    (state.freeWashVouchers || []).forEach(v => {
+        const plate = v.plateNumber || '';
+        const phone = v.customerPhone || '';
+        const key = normalizePlate(plate) || normalizePhone(phone);
+        if (!key) return;
+        if (!map.has(key)) {
+            map.set(key, {
+                key,
+                plateNumber: plate || '-',
+                customerName: v.customerName || 'Pelanggan Cuci',
+                customerPhone: phone,
+                vehicleType: v.vehicleType || 'motor',
+                washTransactions: [],
+                lastDate: v.issuedAt
+            });
+        }
+    });
+
+    const list = Array.from(map.values()).map(cust => {
+        const history = getCustomerWashHistory(cust.plateNumber !== '-' ? cust.plateNumber : cust.customerPhone);
+        return {
+            ...cust,
+            washCount: history.washCount,
+            stampsInCycle: history.stampsInCycle,
+            vouchers: history.vouchers,
+            activeVouchers: history.activeVouchers,
+            redeemedVouchers: history.redeemedVouchers,
+            isEligible: history.isEligibleForFreeWash || (history.washCount >= 7)
+        };
+    });
+
+    list.sort((a, b) => b.washCount - a.washCount || new Date(b.lastDate) - new Date(a.lastDate));
+    return list;
+}
+
+function generateFreeWashVoucher(options = {}) {
+    if (!state.freeWashVouchers) state.freeWashVouchers = [];
+
+    const now = new Date();
+    const expiryDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const code = `FREE-CUCI-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${randomSuffix}`;
+    const id = `vch_${Date.now()}_${randomSuffix}`;
+
+    const newVoucher = {
+        id,
+        code,
+        customerName: options.customerName || 'Pelanggan Setia JAARS',
+        customerPhone: options.customerPhone || '',
+        plateNumber: (options.plateNumber || '-').toUpperCase().trim(),
+        vehicleType: options.vehicleType || 'motor',
+        issuedAt: now.toISOString(),
+        expiresAt: expiryDate.toISOString(),
+        washCount: options.washCount || 7,
+        status: 'active',
+        redeemedAt: null,
+        redeemedInvoiceNo: null,
+        serviceItemName: options.vehicleType === 'mobil' 
+            ? '1x Cuci Mobil Snow Wash & Semir Ban' 
+            : '1x Cuci Motor Snow Wash & Semir Ban',
+        notes: options.notes || 'Hadiah Program Loyalitas Pelanggan: Cuci 7x Gratis 1x',
+        issuedBy: 'Admin JAARS Garage'
+    };
+
+    state.freeWashVouchers.unshift(newVoucher);
+    saveFreeWashVouchers();
+    if (typeof updateLoyaltyBadgesAndCounts === 'function') updateLoyaltyBadgesAndCounts();
+    return newVoucher;
+}
+
+function renderFreeWashReceiptHTML(voucher) {
+    if (!voucher) return '';
+
+    const isMotor = voucher.vehicleType === 'motor';
+    const normalPrice = isMotor ? 15000 : 40000;
+    const isRedeemed = voucher.status === 'redeemed';
+    const isExpired = !isRedeemed && new Date(voucher.expiresAt) < new Date();
+
+    const stampsHTML = [1, 2, 3, 4, 5, 6, 7].map(num => {
+        const isFree = num === 7;
+        return `
+            <div class="flex flex-col items-center justify-center p-1.5 rounded-lg border ${
+                isFree 
+                    ? 'bg-amber-100 border-amber-300 text-amber-900 font-black ring-1 ring-amber-300' 
+                    : 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold'
+            }">
+                <span class="text-sm">${isFree ? '🎁' : '✅'}</span>
+                <span class="text-[9px] uppercase">${isFree ? 'GRATIS' : '#' + num}</span>
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs font-mono text-xs flex flex-col gap-3">
+            
+            <!-- HEADER BENGKEL -->
+            <div class="text-center pb-2 border-b border-dashed border-slate-300">
+                <div class="font-black text-sm tracking-wide text-slate-900">${state.profile.name || 'BENGKEL JAARS GARAGE'}</div>
+                <div class="text-[10px] text-slate-500 font-sans mt-0.5">${state.profile.address || 'Spesialis Servis, Tune Up, Ganti Oli & Cuci Bersih'}</div>
+                <div class="text-[10px] text-slate-500 font-sans">Telp / WA: ${state.profile.phone || ADMIN_JAARS_PHONE}</div>
+            </div>
+
+            <!-- TITLE STRUK KHUSUS -->
+            <div class="text-center py-1 bg-cyan-50 border border-cyan-200 rounded-xl">
+                <div class="font-black text-cyan-950 text-xs sm:text-sm">STRUK BUKTI PENUKARAN CUCI GRATIS</div>
+                <div class="text-[10px] font-bold text-cyan-800 uppercase tracking-wide">Program Loyalitas: Cuci 7x Gratis 1x</div>
+            </div>
+
+            <!-- VOUCHER CODE & STATUS BADGE -->
+            <div class="flex flex-col items-center justify-center p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                <span class="text-[10px] text-slate-500 uppercase">KODE KUPON PENUKARAN:</span>
+                <span class="text-base sm:text-lg font-black text-cyan-800 tracking-wider">${voucher.code}</span>
+                <div class="mt-1">
+                    ${isRedeemed ? `
+                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-slate-200 text-slate-700 border border-slate-300">
+                            🎁 SUDAH DITUKARKAN (Inv: ${voucher.redeemedInvoiceNo || '-'})
+                        </span>
+                    ` : (isExpired ? `
+                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300">
+                            ⚠️ MASA BERLAKU BERAKHIR
+                        </span>
+                    ` : `
+                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse">
+                            ✅ VOUCHER AKTIF - SIAP DITUKARKAN
+                        </span>
+                    `)}
+                </div>
+            </div>
+
+            <!-- CUSTOMER & VEHICLE DATA -->
+            <div class="space-y-1.5 pt-1 text-[11px]">
+                <div class="flex justify-between">
+                    <span class="text-slate-500">Tgl Diterbitkan:</span>
+                    <span class="font-bold text-slate-800">${formatDate(voucher.issuedAt)}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-500">Berlaku Hingga:</span>
+                    <span class="font-bold text-slate-800">${formatDate(voucher.expiresAt)} (30 Hari)</span>
+                </div>
+                <div class="flex justify-between items-center py-1 border-y border-dashed border-slate-200">
+                    <span class="text-slate-500">No. Plat Kendaraan:</span>
+                    <span class="font-black text-sm text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-300 tracking-wider">${voucher.plateNumber || '-'}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-500">Nama Pelanggan:</span>
+                    <span class="font-bold text-slate-800">${voucher.customerName || 'Pelanggan Setia'}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-500">Jenis Kendaraan:</span>
+                    <span class="font-bold text-slate-800">${isMotor ? '🛵 Sepeda Motor' : '🚗 Mobil'}</span>
+                </div>
+                ${voucher.customerPhone ? `
+                    <div class="flex justify-between">
+                        <span class="text-slate-500">No. WhatsApp:</span>
+                        <span class="font-bold text-slate-800">${voucher.customerPhone}</span>
+                    </div>
+                ` : ''}
+            </div>
+
+            <!-- VISUAL 7-STAMP BAR -->
+            <div class="pt-2">
+                <div class="text-[10px] font-bold text-slate-600 mb-1.5 text-center font-sans">
+                    VERIFIKASI 7 KALI CUCI KENDARAAN:
+                </div>
+                <div class="grid grid-cols-7 gap-1">
+                    ${stampsHTML}
+                </div>
+            </div>
+
+            <!-- SERVICE DETAIL & VALUE (RP 0) -->
+            <div class="border-t border-dashed border-slate-300 pt-2 space-y-1 text-[11px]">
+                <div class="font-bold text-slate-800 font-sans">Layanan yang Ditukarkan:</div>
+                <div class="flex justify-between">
+                    <span class="text-slate-600">${voucher.serviceItemName || (isMotor ? '1x Cuci Motor Snow Wash' : '1x Cuci Mobil Snow Wash')}</span>
+                    <span class="text-slate-400 line-through">${formatRupiah(normalPrice)}</span>
+                </div>
+                <div class="flex justify-between text-emerald-700 font-bold">
+                    <span>Diskon Loyalitas 7x Cuci:</span>
+                    <span>-100% (${formatRupiah(normalPrice)})</span>
+                </div>
+                <div class="flex justify-between items-center pt-1.5 border-t border-slate-200 text-xs sm:text-sm font-black">
+                    <span class="text-slate-900">TOTAL BAYAR:</span>
+                    <span class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300">RP 0 (GRATIS)</span>
+                </div>
+            </div>
+
+            <!-- SYARAT & KETENTUAN PENUKARAN -->
+            <div class="bg-slate-50 p-2 rounded-xl border border-slate-200 text-[10px] text-slate-500 font-sans space-y-1 leading-tight">
+                <div class="font-bold text-slate-700">Syarat & Ketentuan:</div>
+                <div>1. Tunjukkan struk fisik ini atau pesan WhatsApp ke kasir JAARS Garage.</div>
+                <div>2. Berlaku untuk 1 (satu) kali pelayanan cuci kendaraan dengan Plat: <strong>${voucher.plateNumber}</strong>.</div>
+                <div>3. Masa berlaku s.d ${formatDate(voucher.expiresAt)}. Tidak dapat diuangkan.</div>
+            </div>
+
+            <!-- TANDA TANGAN VERIFIKASI -->
+            <div class="grid grid-cols-2 gap-4 pt-3 text-center text-[10px] font-sans border-t border-dashed border-slate-200">
+                <div>
+                    <div class="text-slate-400">Kasir JAARS Garage</div>
+                    <div class="h-10"></div>
+                    <div class="font-bold text-slate-700 border-t border-slate-300 pt-0.5">( ${voucher.issuedBy || 'Admin Bengkel'} )</div>
+                </div>
+                <div>
+                    <div class="text-slate-400">Pelanggan / Pemilik</div>
+                    <div class="h-10"></div>
+                    <div class="font-bold text-slate-700 border-t border-slate-300 pt-0.5">( ${voucher.customerName || 'Pelanggan'} )</div>
+                </div>
+            </div>
+
+            <!-- FOOTER MOTTO -->
+            <div class="text-center text-[9px] text-slate-400 font-sans pt-1 border-t border-slate-100">
+                Terima kasih atas kepercayaan & kesetiaan Anda di JAARS Garage!
+            </div>
+        </div>
+    `;
+}
+
+let currentViewingVoucher = null;
+
+function openFreeWashReceiptModal(voucherOrId) {
+    let voucher = voucherOrId;
+    if (typeof voucherOrId === 'string') {
+        voucher = (state.freeWashVouchers || []).find(v => v.id === voucherOrId || v.code === voucherOrId);
+    }
+    if (!voucher) {
+        showToast('Struk kupon cuci gratis tidak ditemukan.');
+        return;
+    }
+
+    currentViewingVoucher = voucher;
+
+    const receiptArea = document.getElementById('free-wash-receipt-area');
+    if (receiptArea) {
+        receiptArea.innerHTML = renderFreeWashReceiptHTML(voucher);
+    }
+
+    const printSection = document.getElementById('print-free-wash-section');
+    if (printSection) {
+        printSection.innerHTML = renderFreeWashReceiptHTML(voucher);
+    }
+
+    const phoneInput = document.getElementById('free-wash-wa-phone');
+    if (phoneInput) {
+        phoneInput.value = voucher.customerPhone || '';
+    }
+
+    const btnSendWA = document.getElementById('btn-send-free-wash-wa');
+    if (btnSendWA) {
+        btnSendWA.onclick = () => {
+            const phone = phoneInput ? phoneInput.value.trim() : voucher.customerPhone;
+            sendFreeWashVoucherWA(voucher.id, phone);
+        };
+    }
+
+    const btnPrint = document.getElementById('btn-print-free-wash');
+    if (btnPrint) {
+        btnPrint.onclick = () => {
+            printFreeWashVoucher(voucher.id);
+        };
+    }
+
+    const btnRedeem = document.getElementById('btn-redeem-free-wash-pos');
+    if (btnRedeem) {
+        if (voucher.status === 'redeemed') {
+            btnRedeem.disabled = true;
+            btnRedeem.classList.add('opacity-50', 'cursor-not-allowed');
+            btnRedeem.innerHTML = '<span>✅</span><span>Sudah Ditukar</span>';
+        } else {
+            btnRedeem.disabled = false;
+            btnRedeem.classList.remove('opacity-50', 'cursor-not-allowed');
+            btnRedeem.innerHTML = '<span>🎁</span><span>Klaim ke Kasir</span>';
+            btnRedeem.onclick = () => {
+                redeemFreeWashInPOS(voucher.id);
+            };
+        }
+    }
+
+    const modal = document.getElementById('modal-free-wash-receipt');
+    if (modal) {
+        modal.classList.remove('hidden');
+    }
+}
+
+function printFreeWashVoucher(voucherId) {
+    const voucher = (state.freeWashVouchers || []).find(v => v.id === voucherId) || currentViewingVoucher;
+    if (!voucher) return;
+
+    const printSection = document.getElementById('print-free-wash-section');
+    if (printSection) {
+        printSection.innerHTML = renderFreeWashReceiptHTML(voucher);
+    }
+    setTimeout(() => {
+        window.print();
+    }, 200);
+}
+
+function sendFreeWashVoucherWA(voucherId, targetPhone) {
+    const voucher = (state.freeWashVouchers || []).find(v => v.id === voucherId) || currentViewingVoucher;
+    if (!voucher) return;
+
+    let phone = targetPhone || voucher.customerPhone || '';
+    let clean = phone.replace(/\D/g, '');
+    if (!clean) {
+        alert('Silakan masukkan nomor WhatsApp pelanggan tujuan pengiriman.');
+        return;
+    }
+    if (clean.startsWith('0')) clean = '62' + clean.slice(1);
+
+    const isMotor = voucher.vehicleType === 'motor';
+    const msg = 
+`*SELAMAT! ANDA MENDAPATKAN 1X CUCI KENDARAAN GRATIS DI BENGKEL JAARS GARAGE!* 🎁🚿
+
+Halo Kak *${voucher.customerName || 'Pelanggan Setia'}*,
+Terima kasih banyak telah menjadi pelanggan setia JAARS Garage! Anda telah menyelesaikan *7x kunjungan cuci kendaraan* bersama kami.
+
+Berikut adalah *STRUK BUKTI PENUKARAN CUCI GRATIS* resmi Anda:
+━━━━━━━━━━━━━━━━━━━━
+🏷️ *KODE KUPON*: *${voucher.code}*
+🚗 *NO. PLAT*: *${voucher.plateNumber || '-'}*
+🛵 *KENDARAAN*: ${isMotor ? 'Sepeda Motor' : 'Mobil'}
+🎁 *LAYANAN GRATIS*: ${voucher.serviceItemName || '1x Cuci Bersih Snow Wash & Semir Ban'}
+💰 *BIAYA*: *RP 0 (100% GRATIS)*
+📅 *Tgl Terbit*: ${formatDate(voucher.issuedAt)}
+⏳ *Berlaku Hingga*: ${formatDate(voucher.expiresAt)} (30 Hari)
+━━━━━━━━━━━━━━━━━━━━
+
+*Cara Penukaran Struk:*
+1. Tunjukkan pesan WhatsApp ini atau struk bukti ke kasir JAARS Garage saat kedatangan cuci berikutnya.
+2. Kasir akan memvalidasi kupon dan memberikan layanan cuci secara GRATIS tanpa dipungut biaya.
+
+📍 *${state.profile.name || 'Bengkel JAARS Garage'}*
+Alamat: ${state.profile.address || 'Bengkel JAARS'}
+No. WA Admin: ${ADMIN_JAARS_PHONE}
+_Bodi Kinclong, Mesin Prima!_`;
+
+    window.open(`https://wa.me/${clean}?text=${encodeURIComponent(msg)}`, '_blank');
+}
+
+function redeemFreeWashInPOS(voucherId) {
+    const voucher = (state.freeWashVouchers || []).find(v => v.id === voucherId);
+    if (!voucher) return;
+
+    if (voucher.status === 'redeemed') {
+        alert(`Voucher kupon ini sudah pernah ditukarkan pada invoice: ${voucher.redeemedInvoiceNo || '-'}`);
+        return;
+    }
+
+    if (!confirm(`Konfirmasi penukaran voucher ${voucher.code} untuk Plat ${voucher.plateNumber}? Layanan cuci Rp 0 akan otomatis dimasukkan ke kasir saat ini.`)) {
+        return;
+    }
+
+    switchTab('pos');
+
+    state.plateNumber = voucher.plateNumber !== '-' ? voucher.plateNumber : state.plateNumber;
+    state.customerName = voucher.customerName;
+    state.customerPhone = voucher.customerPhone;
+    state.selectedVehicle = voucher.vehicleType || 'motor';
+
+    const plateInput = document.getElementById('input-plate-number');
+    const nameInput = document.getElementById('input-customer-name');
+    const phoneInput = document.getElementById('input-customer-phone');
+    if (plateInput) plateInput.value = state.plateNumber;
+    if (nameInput) nameInput.value = state.customerName;
+    if (phoneInput) phoneInput.value = state.customerPhone;
+
+    state.cart = state.cart.filter(it => !it.freeWashVoucherId);
+
+    const isMotor = voucher.vehicleType === 'motor';
+    const freeWashItem = {
+        id: 'wash_free_' + Date.now(),
+        name: `Pelayanan Cuci Gratis (${isMotor ? 'Motor' : 'Mobil'}) - Reward 7x Cuci`,
+        price: 0,
+        qty: 1,
+        unit: 'kendaraan',
+        categoryId: 'cuci',
+        desc: `Klaim Struk Kupon #${voucher.code} (Plat: ${voucher.plateNumber})`,
+        freeWashVoucherId: voucher.id
+    };
+
+    state.cart.unshift(freeWashItem);
+    renderCart();
+
+    const receiptModal = document.getElementById('modal-free-wash-receipt');
+    if (receiptModal) receiptModal.classList.add('hidden');
+    const loyaltyModal = document.getElementById('modal-loyalty-wash');
+    if (loyaltyModal) loyaltyModal.classList.add('hidden');
+
+    showToast(`🎁 Voucher ${voucher.code} berhasil dimasukkan ke Kasir! Total biaya Cuci Rp 0.`);
+}
+
+function issueFreeWashVoucherForCustomer(identifier) {
+    if (!identifier) {
+        showToast('Plat nomor atau identitas pelanggan tidak valid.');
+        return;
+    }
+
+    const history = getCustomerWashHistory(identifier);
+    const existingActive = (history.activeVouchers || [])[0];
+
+    if (existingActive) {
+        if (confirm(`Pelanggan ${history.plateNumber || identifier} sudah memiliki voucher aktif (#${existingActive.code}). Ingin membuka kembali struk bukti voucher tersebut?`)) {
+            openFreeWashReceiptModal(existingActive);
+            return;
+        }
+    }
+
+    const newVoucher = generateFreeWashVoucher({
+        plateNumber: history.plateNumber || identifier,
+        customerName: history.customerName || 'Pelanggan Setia JAARS',
+        customerPhone: history.customerPhone || '',
+        vehicleType: history.vehicleType || 'motor',
+        washCount: history.washCount || 7
+    });
+
+    showToast(`🎉 Berhasil menerbitkan Struk Cuci Gratis untuk Plat ${newVoucher.plateNumber}!`);
+    openFreeWashReceiptModal(newVoucher);
+    if (typeof renderLoyaltyWashManagerModal === 'function') renderLoyaltyWashManagerModal();
+}
+
+function updateCartWashLoyaltyIndicator() {
+    const indicatorEl = document.getElementById('cart-wash-loyalty-indicator');
+    if (!indicatorEl) return;
+
+    const plateInput = document.getElementById('input-plate-number');
+    const phoneInput = document.getElementById('input-customer-phone');
+    const currentPlate = plateInput ? plateInput.value.trim() : (state.plateNumber || '');
+    const currentPhone = phoneInput ? phoneInput.value.trim() : (state.customerPhone || '');
+
+    const hasWash = state.cart.some(it => isWashItem(it));
+
+    if (!currentPlate && !currentPhone && !hasWash) {
+        indicatorEl.classList.add('hidden');
+        return;
+    }
+
+    const history = getCustomerWashHistory(currentPlate || currentPhone);
+    const washCount = history.washCount;
+    const stamps = history.stampsInCycle;
+    const isEligible = history.isEligibleForFreeWash || (washCount >= 7);
+    const activeVoucher = (history.activeVouchers || [])[0];
+
+    indicatorEl.classList.remove('hidden');
+
+    const stampsVisual = [1, 2, 3, 4, 5, 6, 7].map(num => {
+        const isDone = num <= stamps;
+        const isFree = num === 7;
+        let bg = 'bg-slate-100 text-slate-400 border-slate-200';
+        if (isDone) {
+            bg = isFree 
+                ? 'bg-amber-400 text-amber-950 border-amber-500 font-black animate-pulse' 
+                : 'bg-emerald-500 text-white border-emerald-600 font-bold';
+        }
+        return `
+            <div class="w-6 h-6 rounded-md flex items-center justify-center text-[10px] border ${bg}" title="Cuci ke-${num}">
+                ${isDone ? (isFree ? '🎁' : '✓') : num}
+            </div>
+        `;
+    }).join('');
+
+    indicatorEl.innerHTML = `
+        <div class="p-3 bg-gradient-to-r from-cyan-50 to-blue-50 border border-cyan-200 rounded-2xl flex flex-col gap-2 shadow-xs">
+            <div class="flex items-center justify-between flex-wrap gap-1">
+                <div class="flex items-center gap-2">
+                    <span class="text-base">🚿</span>
+                    <div>
+                        <div class="font-extrabold text-xs text-cyan-950 flex items-center gap-1.5">
+                            <span>Program Loyalitas Cuci 7x Gratis 1x</span>
+                            ${currentPlate ? `<span class="font-mono bg-white px-1.5 py-0.5 rounded border border-cyan-200 text-[10px] text-cyan-800">${currentPlate}</span>` : ''}
+                        </div>
+                        <div class="text-[10px] text-cyan-700">
+                            Total Kunjungan Cuci: <strong class="text-cyan-950">${washCount} kali</strong> • Status Siklus: <strong>${stamps}/7 Stamp</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-1">
+                    ${stampsVisual}
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-1 border-t border-cyan-100 flex-wrap gap-2 text-xs">
+                ${activeVoucher ? `
+                    <div class="text-[11px] text-emerald-800 font-bold flex items-center gap-1">
+                        <span>🎁</span>
+                        <span>Ada Kupon Aktif: <strong class="font-mono">${activeVoucher.code}</strong></span>
+                    </div>
+                    <button type="button" onclick="redeemFreeWashInPOS('${activeVoucher.id}')"
+                        class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg shadow-xs transition-all active:scale-95 cursor-pointer">
+                        Gunakan Kupon di Kasir
+                    </button>
+                ` : (isEligible ? `
+                    <div class="text-[11px] text-amber-900 font-bold flex items-center gap-1">
+                        <span>🎉</span>
+                        <span>Pelanggan berhak atas 1x Cuci Gratis (Sudah 7x Cuci)!</span>
+                    </div>
+                    <button type="button" onclick="issueFreeWashVoucherForCustomer('${currentPlate || currentPhone}')"
+                        class="px-2.5 py-1 bg-cyan-700 hover:bg-cyan-800 text-white text-[11px] font-black rounded-lg shadow-xs transition-all active:scale-95 cursor-pointer">
+                        🎟️ Terbitkan Struk Cuci Gratis
+                    </button>
+                ` : `
+                    <div class="text-[10px] text-cyan-800">
+                        ${stamps === 6 
+                            ? '🔥 Tinggal 1x cuci lagi untuk mendapatkan 1x Cuci Kendaraan GRATIS!' 
+                            : `Kumpulkan ${7 - stamps} stamp cuci lagi untuk penukaran Cuci Gratis.`}
+                    </div>
+                    <button type="button" onclick="openLoyaltyWashModal()"
+                        class="text-[10px] font-bold text-cyan-700 hover:text-cyan-900 underline cursor-pointer">
+                        Lihat Data Loyalitas
+                    </button>
+                `)}
+            </div>
+        </div>
+    `;
+}
+
+function updateLoyaltyBadgesAndCounts() {
+    const allCustomers = getAllWashCustomers();
+    const eligibleCount = allCustomers.filter(c => c.isEligible).length;
+    const activeVouchersCount = (state.freeWashVouchers || []).filter(v => v.status === 'active').length;
+
+    const navBadge = document.getElementById('badge-eligible-wash-count');
+    if (navBadge) {
+        if (eligibleCount > 0) {
+            navBadge.textContent = eligibleCount;
+            navBadge.classList.remove('hidden');
+        } else {
+            navBadge.classList.add('hidden');
+        }
+    }
+
+    const summaryBadge = document.getElementById('summary-loyalty-count-badge');
+    if (summaryBadge) {
+        if (eligibleCount > 0) {
+            summaryBadge.textContent = `${eligibleCount} Berhak Cuci Gratis`;
+            summaryBadge.classList.remove('hidden');
+        } else {
+            summaryBadge.classList.add('hidden');
+        }
+    }
+
+    const statTotalEl = document.getElementById('loyalty-stat-total-customers');
+    const statEligibleEl = document.getElementById('loyalty-stat-eligible-count');
+    const statActiveVchEl = document.getElementById('loyalty-stat-active-vouchers');
+
+    if (statTotalEl) statTotalEl.textContent = allCustomers.length;
+    if (statEligibleEl) statEligibleEl.textContent = eligibleCount;
+    if (statActiveVchEl) statActiveVchEl.textContent = activeVouchersCount;
+}
+
+function openLoyaltyWashModal(subTab = 'customers') {
+    const modal = document.getElementById('modal-loyalty-wash');
+    if (!modal) return;
+
+    state.activeLoyaltySubTab = subTab;
+    renderLoyaltyWashManagerModal();
+    modal.classList.remove('hidden');
+}
+
+function switchLoyaltySubTab(tab) {
+    state.activeLoyaltySubTab = tab;
+    const btnCustomers = document.getElementById('tab-loyalty-customers-btn');
+    const btnVouchers = document.getElementById('tab-loyalty-vouchers-btn');
+    const secCustomers = document.getElementById('loyalty-subtab-customers');
+    const secVouchers = document.getElementById('loyalty-subtab-vouchers');
+
+    if (tab === 'customers') {
+        if (btnCustomers) {
+            btnCustomers.className = 'px-3.5 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer transition-all';
+        }
+        if (btnVouchers) {
+            btnVouchers.className = 'px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer transition-all';
+        }
+        if (secCustomers) secCustomers.classList.remove('hidden');
+        if (secVouchers) secVouchers.classList.add('hidden');
+    } else {
+        if (btnCustomers) {
+            btnCustomers.className = 'px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer transition-all';
+        }
+        if (btnVouchers) {
+            btnVouchers.className = 'px-3.5 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer transition-all';
+        }
+        if (secCustomers) secCustomers.classList.add('hidden');
+        if (secVouchers) secVouchers.classList.remove('hidden');
+    }
+
+    renderLoyaltyWashManagerModal();
+}
+
+function renderLoyaltyWashManagerModal() {
+    updateLoyaltyBadgesAndCounts();
+
+    const allCustomers = getAllWashCustomers();
+    const allVouchers = state.freeWashVouchers || [];
+
+    const custTbody = document.getElementById('loyalty-customers-table-body');
+    if (custTbody) {
+        if (allCustomers.length === 0) {
+            custTbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="px-3 py-8 text-center text-slate-400">
+                        <div class="text-2xl mb-1">🚿</div>
+                        <p class="font-bold text-slate-700">Belum ada data pelanggan cuci kendaraan.</p>
+                        <p class="text-[11px] text-slate-400">Transaksi layanan cuci yang dicatat di kasir akan otomatis masuk ke program loyalitas.</p>
+                    </td>
+                </tr>
+            `;
+        } else {
+            custTbody.innerHTML = allCustomers.map((cust) => {
+                const isEligible = cust.isEligible;
+                const activeVch = (cust.activeVouchers || [])[0];
+
+                const stampsVisual = [1, 2, 3, 4, 5, 6, 7].map(num => {
+                    const isDone = num <= cust.stampsInCycle;
+                    const isFree = num === 7;
+                    return `<span class="${isDone ? (isFree ? 'text-amber-500 font-black' : 'text-emerald-600 font-bold') : 'text-slate-300'}">${isDone ? (isFree ? '🎁' : '●') : '○'}</span>`;
+                }).join(' ');
+
+                return `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-3 py-2.5 text-center font-mono font-black text-slate-900">
+                            <span class="bg-slate-100 px-2 py-0.5 rounded border border-slate-200">${cust.plateNumber}</span>
+                        </td>
+                        <td class="px-3 py-2.5">
+                            <div class="font-bold text-slate-800">${cust.customerName}</div>
+                            ${cust.customerPhone ? `
+                                <div class="text-[10px] text-slate-400 font-mono">${cust.customerPhone}</div>
+                            ` : ''}
+                        </td>
+                        <td class="px-3 py-2.5 text-center">
+                            ${cust.vehicleType === 'mobil' 
+                                ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">🚗 Mobil</span>' 
+                                : '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">🛵 Motor</span>'}
+                        </td>
+                        <td class="px-3 py-2.5 text-center font-mono font-black text-slate-800 text-sm">
+                            ${cust.washCount}x
+                        </td>
+                        <td class="px-3 py-2.5 text-center">
+                            <div class="text-xs tracking-wider">${stampsVisual}</div>
+                            <div class="text-[10px] ${isEligible ? 'text-amber-700 font-black' : 'text-slate-500'} mt-0.5">
+                                ${isEligible ? '🎉 Berhak Cuci Gratis' : `${cust.stampsInCycle}/7 Stamp`}
+                            </div>
+                        </td>
+                        <td class="px-3 py-2.5 text-right">
+                            <div class="flex items-center justify-end gap-1.5 flex-wrap">
+                                ${activeVch ? `
+                                    <button onclick="openFreeWashReceiptModal('${activeVch.id}')"
+                                        class="px-2.5 py-1 bg-cyan-700 hover:bg-cyan-800 text-white text-[11px] font-black rounded-lg shadow-xs transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                                        title="Buka Struk Voucher Aktif">
+                                        <span>🎟️</span>
+                                        <span>Lihat Struk</span>
+                                    </button>
+                                ` : (isEligible ? `
+                                    <button onclick="issueFreeWashVoucherForCustomer('${cust.plateNumber !== '-' ? cust.plateNumber : cust.customerPhone}')"
+                                        class="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-black rounded-lg shadow-xs transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                                        title="Terbitkan Struk Bukti Cuci Gratis">
+                                        <span>🎟️</span>
+                                        <span>Terbitkan Struk</span>
+                                    </button>
+                                ` : `
+                                    <button onclick="issueFreeWashVoucherForCustomer('${cust.plateNumber !== '-' ? cust.plateNumber : cust.customerPhone}')"
+                                        class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-semibold rounded-lg transition-all cursor-pointer"
+                                        title="Beri voucher cuci gratis secara khusus">
+                                        + Hadiahkan
+                                    </button>
+                                `)}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    }
+
+    const vchTbody = document.getElementById('loyalty-vouchers-table-body');
+    if (vchTbody) {
+        if (allVouchers.length === 0) {
+            vchTbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="px-3 py-8 text-center text-slate-400">
+                        <div class="text-2xl mb-1">🎟️</div>
+                        <p class="font-bold text-slate-700">Belum ada struk kupon voucher cuci gratis yang diterbitkan.</p>
+                        <p class="text-[11px] text-slate-400">Voucher yang diterbitkan otomatis atau manual akan tersimpan di sini.</p>
+                    </td>
+                </tr>
+            `;
+        } else {
+            vchTbody.innerHTML = allVouchers.map(v => {
+                const isRedeemed = v.status === 'redeemed';
+                const isExpired = !isRedeemed && new Date(v.expiresAt) < new Date();
+
+                return `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-3 py-2.5 font-mono font-bold text-cyan-800 text-xs">
+                            ${v.code}
+                        </td>
+                        <td class="px-3 py-2.5 font-mono font-black text-slate-900">
+                            <span class="bg-slate-100 px-2 py-0.5 rounded border border-slate-200">${v.plateNumber}</span>
+                        </td>
+                        <td class="px-3 py-2.5">
+                            <div class="font-bold text-slate-800 text-xs">${v.customerName}</div>
+                            ${v.customerPhone ? `<div class="text-[10px] text-slate-400 font-mono">${v.customerPhone}</div>` : ''}
+                        </td>
+                        <td class="px-3 py-2.5 text-xs text-slate-600">
+                            ${formatDate(v.issuedAt)}
+                        </td>
+                        <td class="px-3 py-2.5 text-center">
+                            ${isRedeemed ? `
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-200 text-slate-700 border border-slate-300">
+                                    🎁 Sudah Ditukar
+                                </span>
+                            ` : (isExpired ? `
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300">
+                                    ⚠️ Kedaluwarsa
+                                </span>
+                            ` : `
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                    ✅ Aktif
+                                </span>
+                            `)}
+                        </td>
+                        <td class="px-3 py-2.5 text-right">
+                            <div class="flex items-center justify-end gap-1 flex-wrap">
+                                <button onclick="openFreeWashReceiptModal('${v.id}')"
+                                    class="px-2.5 py-1 bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold rounded-lg shadow-xs transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                                    title="Buka Struk Bukti Penukaran">
+                                    <span>👁️</span>
+                                    <span>Struk</span>
+                                </button>
+                                ${!isRedeemed ? `
+                                    <button onclick="redeemFreeWashInPOS('${v.id}')"
+                                        class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                                        title="Klaim penukaran di Kasir POS">
+                                        <span>🎁</span>
+                                        <span>Klaim</span>
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    }
+}
+
+function checkLoyaltyCustomerDirect() {
+    const input = document.getElementById('loyalty-search-input');
+    const resultBox = document.getElementById('loyalty-search-result-box');
+    if (!input || !resultBox) return;
+
+    const query = input.value.trim();
+    if (!query) {
+        resultBox.classList.add('hidden');
+        return;
+    }
+
+    const history = getCustomerWashHistory(query);
+    resultBox.classList.remove('hidden');
+
+    if (history.washCount === 0) {
+        resultBox.innerHTML = `
+            <div class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs flex items-start justify-between gap-2">
+                <div>
+                    <span class="font-bold text-amber-900">Belum ada riwayat cuci untuk: "${query}"</span>
+                    <p class="text-[11px] text-amber-700 mt-0.5">Pastikan plat nomor atau nomor WhatsApp sudah benar dan pernah bertransaksi layanan cuci di kasir.</p>
+                </div>
+                <button type="button" onclick="openManualCreateVoucherModal('${query}')"
+                    class="shrink-0 px-2.5 py-1 bg-cyan-700 hover:bg-cyan-800 text-white text-[11px] font-bold rounded-lg transition-all cursor-pointer">
+                    + Buat Voucher Manual
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    const isEligible = history.isEligibleForFreeWash || (history.washCount >= 7);
+    const activeVch = (history.activeVouchers || [])[0];
+
+    resultBox.innerHTML = `
+        <div class="p-3.5 bg-cyan-50 border border-cyan-200 rounded-xl flex flex-col gap-2.5 text-xs">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                    <div class="font-black text-sm text-cyan-950 flex items-center gap-2">
+                        <span class="font-mono bg-white px-2 py-0.5 rounded border border-cyan-300">${history.plateNumber || query}</span>
+                        <span>${history.customerName || 'Pelanggan Cuci'}</span>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white border border-cyan-200 text-cyan-800">
+                            ${history.vehicleType === 'mobil' ? '🚗 Mobil' : '🛵 Motor'}
+                        </span>
+                    </div>
+                    <div class="text-[11px] text-cyan-700 mt-1">
+                        Total Kunjungan Cuci: <strong class="text-cyan-950 text-sm font-mono">${history.washCount}x</strong> • Stamp Siklus: <strong class="text-cyan-950 text-sm font-mono">${history.stampsInCycle}/7</strong>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-1.5">
+                    ${activeVch ? `
+                        <button type="button" onclick="openFreeWashReceiptModal('${activeVch.id}')"
+                            class="px-3 py-1.5 bg-cyan-700 hover:bg-cyan-800 text-white font-black text-xs rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer">
+                            🎟️ Lihat Struk Voucher Aktif
+                        </button>
+                    ` : (isEligible ? `
+                        <button type="button" onclick="issueFreeWashVoucherForCustomer('${history.plateNumber || query}')"
+                            class="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer">
+                            🎉 Terbitkan Struk Cuci Gratis Sekarang!
+                        </button>
+                    ` : `
+                        <button type="button" onclick="issueFreeWashVoucherForCustomer('${history.plateNumber || query}')"
+                            class="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl transition-all cursor-pointer">
+                            + Beri Voucher Spesial
+                        </button>
+                    `)}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function openManualCreateVoucherModal(prefillPlate = '') {
+    const plate = prompt('Masukkan Nomor Plat Kendaraan untuk Struk Cuci Gratis:', prefillPlate || '');
+    if (!plate) return;
+
+    const name = prompt('Masukkan Nama Pelanggan:', 'Pelanggan Setia JAARS') || 'Pelanggan Setia JAARS';
+    const phone = prompt('Masukkan Nomor WhatsApp Pelanggan (opsional):', '') || '';
+    const vehicle = confirm('Pilih Jenis Kendaraan:\n\nKlik OK untuk SEPEDA MOTOR (🛵)\nKlik CANCEL untuk MOBIL (🚗)') ? 'motor' : 'mobil';
+
+    const newVoucher = generateFreeWashVoucher({
+        plateNumber: plate.toUpperCase().trim(),
+        customerName: name.trim(),
+        customerPhone: phone.trim(),
+        vehicleType: vehicle,
+        washCount: 7,
+        notes: 'Penerbitan Struk Bukti Penukaran Cuci Gratis Manual oleh Admin'
+    });
+
+    showToast(`✅ Berhasil menerbitkan Struk Cuci Gratis manual untuk Plat ${newVoucher.plateNumber}!`);
+    openFreeWashReceiptModal(newVoucher);
+    if (typeof renderLoyaltyWashManagerModal === 'function') renderLoyaltyWashManagerModal();
+}
+
+window.isWashItem = isWashItem;
+window.hasWashService = hasWashService;
+window.normalizePlate = normalizePlate;
+window.normalizePhone = normalizePhone;
+window.saveFreeWashVouchers = saveFreeWashVouchers;
+window.getCustomerWashHistory = getCustomerWashHistory;
+window.getAllWashCustomers = getAllWashCustomers;
+window.generateFreeWashVoucher = generateFreeWashVoucher;
+window.renderFreeWashReceiptHTML = renderFreeWashReceiptHTML;
+window.openFreeWashReceiptModal = openFreeWashReceiptModal;
+window.printFreeWashVoucher = printFreeWashVoucher;
+window.sendFreeWashVoucherWA = sendFreeWashVoucherWA;
+window.redeemFreeWashInPOS = redeemFreeWashInPOS;
+window.issueFreeWashVoucherForCustomer = issueFreeWashVoucherForCustomer;
+window.updateCartWashLoyaltyIndicator = updateCartWashLoyaltyIndicator;
+window.updateLoyaltyBadgesAndCounts = updateLoyaltyBadgesAndCounts;
+window.openLoyaltyWashModal = openLoyaltyWashModal;
+window.switchLoyaltySubTab = switchLoyaltySubTab;
+window.renderLoyaltyWashManagerModal = renderLoyaltyWashManagerModal;
+window.checkLoyaltyCustomerDirect = checkLoyaltyCustomerDirect;
+window.openManualCreateVoucherModal = openManualCreateVoucherModal;
+
 // --- KOMPONEN KARTU HASIL LAYANAN DETAIL YANG SUDAH DIBAYAR ---
 function generatePaidServicesCardHTML(tx) {
     const isMotor = tx.vehicleType === 'motor';
@@ -3459,15 +4654,41 @@ function generatePaidServicesCardHTML(tx) {
         ? '<span class="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">🛵 Motor</span>' 
         : '<span class="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">🚗 Mobil</span>';
 
+    const isWash = hasWashService(tx);
+    const washStats = isWash ? getCustomerWashHistory(tx.plateNumber || tx.customerPhone) : null;
+    let washBadge = '';
+    if (isWash && washStats) {
+        washBadge = `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-300 flex items-center gap-1">🚿 Cuci (${washStats.washCount}x)</span>`;
+        if (washStats.washCount >= 7) {
+            washBadge += `<span class="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 animate-pulse">🎁 HAK CUCI GRATIS</span>`;
+        }
+    }
+
     const isBon = tx.paymentMethod === 'bon';
-    const statusBadge = isBon
-        ? '<span class="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">⚠️ BELUM LUNAS (BON)</span>'
-        : '<span class="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">✅ LUNAS / SUDAH DIBAYAR</span>';
+    const isDigital = tx.paymentMethod === 'qris' || tx.paymentMethod === 'transfer';
+    const isValidated = isTransactionPaymentValidated(tx);
+
+    let statusBadge = '';
+    if (isBon) {
+        statusBadge = '<span class="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">⚠️ BELUM LUNAS (BON)</span>';
+    } else if (isDigital) {
+        if (isValidated) {
+            statusBadge = '<span class="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">✅ LUNAS (TERVALIDASI)</span>';
+        } else {
+            statusBadge = '<span class="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 animate-pulse">⏳ MENUNGGU VALIDASI (' + (tx.paymentMethod === 'qris' ? 'QRIS' : 'TRANSFER BRI') + ')</span>';
+        }
+    } else {
+        statusBadge = '<span class="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">✅ LUNAS (KASIR)</span>';
+    }
 
     const payBadge = tx.paymentMethod === 'cash' ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">💵 Tunai (Cash)</span>' :
                      tx.paymentMethod === 'qris' ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">📱 QRIS Kasir</span>' :
                      tx.paymentMethod === 'transfer' ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200">🏦 Transfer BRI</span>' :
                      '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">📝 Bon / Hutang</span>';
+
+    const bookingBadge = tx.isBooking 
+        ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">📅 Booking Pelayanan</span>' 
+        : '';
 
     const items = tx.items || [];
     const itemsRowsHTML = items.map((item, itemIdx) => {
@@ -3501,7 +4722,7 @@ function generatePaidServicesCardHTML(tx) {
     const cleanPhone = (tx.customerPhone || '').replace(/\D/g, '');
 
     return `
-        <div class="bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:border-slate-300 transition-all p-4 sm:p-5 flex flex-col gap-3.5">
+        <div class="bg-white rounded-2xl border ${isDigital && !isValidated ? 'border-amber-300 ring-2 ring-amber-100/80 shadow-md' : 'border-slate-200/90 shadow-xs'} hover:border-slate-300 transition-all p-4 sm:p-5 flex flex-col gap-3.5">
             
             <!-- TOP HEADER: INVOICE, TIME, VEHICLE, STATUS, PAYMENT -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
@@ -3509,7 +4730,9 @@ function generatePaidServicesCardHTML(tx) {
                     <span class="font-mono text-xs font-black text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">${tx.invoiceNo}</span>
                     ${vehicleBadge}
                     ${payBadge}
+                    ${bookingBadge}
                     ${statusBadge}
+                    ${washBadge}
                 </div>
                 <div class="text-xs text-slate-400 font-medium flex items-center gap-1">
                     <span>🕒</span>
@@ -3545,6 +4768,48 @@ function generatePaidServicesCardHTML(tx) {
                     </div>
                 ` : ''}
             </div>
+
+            <!-- VALIDASI STATUS BANNER KHUSUS QRIS / TRANSFER BANK -->
+            ${isDigital ? (
+                !isValidated ? `
+                    <div class="bg-amber-50/90 border-2 border-amber-300 rounded-xl p-3 sm:p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs">
+                        <div class="flex items-start gap-2.5">
+                            <span class="text-xl">⏳</span>
+                            <div>
+                                <div class="font-black text-amber-950 text-xs sm:text-sm flex items-center gap-2 flex-wrap">
+                                    <span>Validasi Pembayaran ${tx.paymentMethod === 'qris' ? 'QRIS Kasir' : 'Transfer Bank BRI'} Diperlukan</span>
+                                    <span class="text-[10px] font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">Belum Dicek</span>
+                                </div>
+                                <p class="text-[11px] text-amber-800 mt-1 leading-relaxed">
+                                    Total tagihan: <strong class="font-black text-amber-950 font-mono text-xs">${formatRupiah(tx.total)}</strong>. 
+                                    ${tx.paymentMethod === 'qris' 
+                                        ? 'Silakan periksa notifikasi/settlement pada aplikasi QRIS Kasir JAARS Garage.' 
+                                        : `Silakan periksa mutasi Rekening BRI (${state.profile.bankAccount || '-'} a.n ${state.profile.bankHolder || '-'}).`}
+                                </p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="toggleTransactionPaymentValidation('${tx.id}')"
+                            class="shrink-0 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer">
+                            <span>✅</span>
+                            <span>Validasi Lunas (Uang Masuk)</span>
+                        </button>
+                    </div>
+                ` : `
+                    <div class="bg-emerald-50/70 border border-emerald-200 rounded-xl px-3 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-emerald-700 font-bold">✅</span>
+                            <span class="font-extrabold text-emerald-900">Pembayaran ${tx.paymentMethod === 'qris' ? 'QRIS Kasir' : 'Transfer BRI'} Sudah Divalidasi Lunas</span>
+                            ${tx.validatedAt ? `<span class="text-[10px] text-emerald-800 font-mono bg-white px-2 py-0.5 rounded border border-emerald-200">🕒 Divalidasi: ${formatDate(tx.validatedAt)}</span>` : ''}
+                        </div>
+                        <button type="button" onclick="toggleTransactionPaymentValidation('${tx.id}')"
+                            class="text-[11px] font-bold text-slate-500 hover:text-amber-800 hover:bg-amber-100 px-2.5 py-1 rounded-lg border border-slate-200 transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                            title="Batalkan status validasi jika dana belum masuk atau salah cek">
+                            <span>↩️</span>
+                            <span>Batalkan Validasi</span>
+                        </button>
+                    </div>
+                `
+            ) : ''}
 
             <!-- TABEL HASIL LAYANAN DETAIL YANG SUDAH DIBAYAR -->
             <div class="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/40">
@@ -3590,28 +4855,53 @@ function generatePaidServicesCardHTML(tx) {
                     ` : ''}
                 </div>
 
-                <div class="flex items-center gap-1.5 justify-end">
+                <div class="flex items-center gap-1.5 justify-end flex-wrap">
+                    ${isDigital ? (
+                        !isValidated ? `
+                            <button onclick="toggleTransactionPaymentValidation('${tx.id}')"
+                                class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-xs transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                                title="Konfirmasi bahwa dana telah dicek dan masuk">
+                                <span>✅</span>
+                                <span>Validasi Lunas</span>
+                            </button>
+                        ` : `
+                            <button onclick="toggleTransactionPaymentValidation('${tx.id}')"
+                                class="px-2.5 py-1.5 bg-slate-100 hover:bg-amber-50 text-slate-600 hover:text-amber-800 border border-slate-200 text-xs font-semibold rounded-xl transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                                title="Batalkan validasi jika diperlukan">
+                                <span>↩️</span>
+                                <span>Batal Validasi</span>
+                            </button>
+                        `
+                    ) : ''}
+                    ${isWash && washStats && washStats.washCount >= 7 ? `
+                        <button onclick="issueFreeWashVoucherForCustomer('${tx.plateNumber || tx.customerPhone}')"
+                            class="px-2.5 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white text-xs font-black rounded-xl shadow-xs transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                            title="Cetak Struk Bukti Penukaran Cuci Gratis">
+                            <span>🎟️</span>
+                            <span>Struk Cuci Gratis</span>
+                        </button>
+                    ` : ''}
                     <button onclick="sendDirectWhatsApp('${tx.id}')"
-                        class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1 active:scale-95"
+                        class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
                         title="Kirim Nota via WhatsApp">
                         <span>💬</span>
                         <span>Kirim WA</span>
                     </button>
                     <button onclick="viewHistoryReceipt('${tx.id}')"
-                        class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1"
+                        class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1 cursor-pointer"
                         title="Buka Nota Kasir">
                         <span>👁️</span>
                         <span>Lihat Nota</span>
                     </button>
                     <button onclick="printTransactionDirect('${tx.id}')"
-                        class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1 shadow-xs active:scale-95"
+                        class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1 shadow-xs active:scale-95 cursor-pointer"
                         title="Cetak Struk Thermal / Kertas">
                         <span>🖨️</span>
                         <span>Cetak</span>
                     </button>
                     ${state.isAdmin ? `
                         <button onclick="deleteTransaction('${tx.id}')"
-                            class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-1" title="Hapus transaksi dari riwayat">
+                            class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-1 cursor-pointer" title="Hapus transaksi dari riwayat">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
@@ -3835,8 +5125,127 @@ function renderPaidServicesSummary() {
         }).join('');
     }
 
-    // 5. Filter List Transaksi Hari Ini berdasarkan Dropdown & Search Input
+    // 5. Agregasi Status Validasi Pembayaran Digital Hari Ini (QRIS / Transfer Bank)
+    const pendingValidationTx = allTodayTx.filter(tx => {
+        return (tx.paymentMethod === 'qris' || tx.paymentMethod === 'transfer') && !isTransactionPaymentValidated(tx);
+    });
+    const verifiedDigitalTx = allTodayTx.filter(tx => {
+        return (tx.paymentMethod === 'qris' || tx.paymentMethod === 'transfer') && isTransactionPaymentValidated(tx);
+    });
+    const verifiedAllTx = allTodayTx.filter(tx => isTransactionPaymentValidated(tx));
+    const qrisTx = allTodayTx.filter(tx => tx.paymentMethod === 'qris');
+    const transferTx = allTodayTx.filter(tx => tx.paymentMethod === 'transfer');
+    const sumPendingValidation = pendingValidationTx.reduce((sum, tx) => sum + (Number(tx.total) || 0), 0);
+
+    // Update Navigasi Badges
+    const badgeAll = document.getElementById('nav-val-badge-all');
+    const badgePending = document.getElementById('nav-val-badge-pending');
+    const badgeVerified = document.getElementById('nav-val-badge-verified');
+    const badgeQris = document.getElementById('nav-val-badge-qris');
+    const badgeTransfer = document.getElementById('nav-val-badge-transfer');
+    const btnValidateAll = document.getElementById('btn-validate-all-summary');
+    const alertBox = document.getElementById('summary-validation-alert');
+
+    if (badgeAll) badgeAll.textContent = allTodayTx.length;
+    if (badgePending) badgePending.textContent = pendingValidationTx.length;
+    if (badgeVerified) badgeVerified.textContent = verifiedAllTx.length;
+    if (badgeQris) badgeQris.textContent = qrisTx.length;
+    if (badgeTransfer) badgeTransfer.textContent = transferTx.length;
+
+    // Show/hide tombol validasi semua
+    if (btnValidateAll) {
+        if (pendingValidationTx.length > 0) {
+            btnValidateAll.classList.remove('hidden');
+        } else {
+            btnValidateAll.classList.add('hidden');
+        }
+    }
+
+    // Tampilkan Alert Status Validasi
+    if (alertBox) {
+        if (pendingValidationTx.length > 0) {
+            alertBox.innerHTML = `
+                <div class="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs shadow-xs">
+                    <div class="flex items-start gap-3">
+                        <span class="text-2xl mt-0.5">⚠️</span>
+                        <div>
+                            <div class="font-black text-amber-950 text-sm flex items-center gap-2 flex-wrap">
+                                <span>Perhatian Kasir: Ada ${pendingValidationTx.length} Transaksi QRIS / Transfer Perlu Dicek!</span>
+                                <span class="bg-amber-200 text-amber-900 font-black px-2 py-0.5 rounded-full text-[10px]">Menunggu Verifikasi Mutasi</span>
+                            </div>
+                            <p class="text-amber-800 mt-1 leading-relaxed">
+                                Total nominal belum dicek: <strong class="font-mono text-amber-950 font-black text-xs">${formatRupiah(sumPendingValidation)}</strong>. 
+                                Silakan periksa mutasi rekening BRI atau aplikasi QRIS sebelum menyerahkan kunci atau menyelesaikan pengerjaan bengkel.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button type="button" onclick="setSummaryValidationFilter('pending')"
+                            class="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-xl transition-all shadow-xs flex items-center gap-1.5 active:scale-95 cursor-pointer">
+                            <span>🔍</span>
+                            <span>Filter Belum Dicek (${pendingValidationTx.length})</span>
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else if (allTodayTx.length > 0 && (qrisTx.length > 0 || transferTx.length > 0)) {
+            alertBox.innerHTML = `
+                <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-lg">✅</span>
+                        <div>
+                            <span class="font-extrabold text-emerald-900">Seluruh transaksi QRIS dan Transfer BRI hari ini (${qrisTx.length + transferTx.length} nota) telah divalidasi LUNAS.</span>
+                            <span class="text-slate-500 block text-[11px] mt-0.5">Semua dana telah diverifikasi masuk ke kas / mutasi rekening JAARS Garage.</span>
+                        </div>
+                    </div>
+                    <span class="text-[11px] font-bold text-emerald-700 bg-white px-2.5 py-1 rounded-lg border border-emerald-200 shrink-0">
+                        Penerimaan Terverifikasi
+                    </span>
+                </div>
+            `;
+        } else {
+            alertBox.innerHTML = '';
+        }
+    }
+
+    // Update active style on navigation buttons
+    const activeVal = state.summaryFilterValidation || 'all';
+    ['all', 'pending', 'verified', 'qris', 'transfer'].forEach(k => {
+        const btn = document.getElementById(`nav-val-btn-${k}`);
+        if (btn) {
+            if (k === activeVal) {
+                btn.className = 'summary-val-btn px-4 py-2.5 rounded-xl border transition-all flex items-center gap-2 cursor-pointer bg-slate-900 text-white border-slate-900 shadow-xs shrink-0';
+            } else {
+                btn.className = 'summary-val-btn px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 transition-all flex items-center gap-2 cursor-pointer shrink-0';
+            }
+        }
+    });
+
+    const selectVal = document.getElementById('select-summary-validation');
+    if (selectVal) {
+        if (['all', 'pending', 'verified'].includes(activeVal)) {
+            selectVal.value = activeVal;
+        } else {
+            selectVal.value = 'all';
+        }
+    }
+
+    // 6. Filter List Transaksi Hari Ini berdasarkan Validasi, Metode & Kendaraan
     const filteredTx = allTodayTx.filter(tx => {
+        const isDigital = tx.paymentMethod === 'qris' || tx.paymentMethod === 'transfer';
+        const isVal = isTransactionPaymentValidated(tx);
+
+        // Status Validasi Filter
+        if (state.summaryFilterValidation === 'pending') {
+            if (!isDigital || isVal) return false;
+        } else if (state.summaryFilterValidation === 'verified') {
+            if (!isVal) return false;
+        } else if (state.summaryFilterValidation === 'qris') {
+            if (tx.paymentMethod !== 'qris') return false;
+        } else if (state.summaryFilterValidation === 'transfer') {
+            if (tx.paymentMethod !== 'transfer') return false;
+        }
+
         // Metode
         if (state.summaryFilterPayment && state.summaryFilterPayment !== 'all') {
             if (tx.paymentMethod !== state.summaryFilterPayment) return false;
@@ -3868,20 +5277,28 @@ function renderPaidServicesSummary() {
 
     // Render Kartu Nota Detail Hari Ini
     if (filteredTx.length === 0) {
+        let emptyTitle = `Tidak ada transaksi yang cocok untuk hari ini (${dateFormattedShort})`;
+        let emptyDesc = allTodayTx.length === 0 
+            ? 'Belum ada transaksi yang diproses di kasir hari ini. Lakukan pembayaran baru melalui menu Kasir Pembayaran.' 
+            : 'Sesuaikan pilihan navigasi validasi, metode pembayaran, kendaraan, atau hapus kata kunci pencarian Anda.';
+
+        if (state.summaryFilterValidation === 'pending') {
+            emptyTitle = `Alhamdulillah! Tidak ada transaksi yang menunggu validasi pembayaran`;
+            emptyDesc = `Seluruh transaksi QRIS & Transfer Bank hari ini sudah divalidasi dan lunas oleh kasir/admin.`;
+        }
+
         container.innerHTML = `
             <div class="py-10 px-4 text-center bg-slate-50/80 rounded-2xl border border-dashed border-slate-300">
-                <div class="text-4xl mb-2">📋</div>
-                <h4 class="font-bold text-slate-700 text-sm">Tidak ada transaksi yang cocok untuk hari ini (${dateFormattedShort})</h4>
+                <div class="text-4xl mb-2">${state.summaryFilterValidation === 'pending' ? '🎉' : '📋'}</div>
+                <h4 class="font-bold text-slate-700 text-sm">${emptyTitle}</h4>
                 <p class="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-                    ${allTodayTx.length === 0 
-                        ? 'Belum ada transaksi yang diproses di kasir hari ini. Lakukan pembayaran baru melalui menu Kasir Pembayaran.' 
-                        : 'Sesuaikan pilihan metode pembayaran, kendaraan, atau hapus kata kunci pencarian Anda.'}
+                    ${emptyDesc}
                 </p>
                 <div class="mt-4 flex items-center justify-center gap-2">
                     ${allTodayTx.length > 0 ? `
                         <button type="button" onclick="resetSummaryFilters()" 
                             class="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer">
-                            Reset Filter
+                            Reset Filter Navigasi
                         </button>
                     ` : ''}
                     <button type="button" onclick="switchTab('pos')" 
@@ -4076,13 +5493,16 @@ window.printTodaySummary = function() {
 window.resetSummaryFilters = function() {
     state.summaryFilterPayment = 'all';
     state.summaryFilterVehicle = 'all';
+    state.summaryFilterValidation = 'all';
     state.summarySearchKeyword = '';
     const searchInput = document.getElementById('search-paid-services-input');
     const paySelect = document.getElementById('select-summary-payment');
     const vehSelect = document.getElementById('select-summary-vehicle');
+    const valSelect = document.getElementById('select-summary-validation');
     if (searchInput) searchInput.value = '';
     if (paySelect) paySelect.value = 'all';
     if (vehSelect) vehSelect.value = 'all';
+    if (valSelect) valSelect.value = 'all';
     renderPaidServicesSummary();
 };
 
@@ -4168,7 +5588,7 @@ window.exportTodayPaidServicesToExcel = function() {
         [`Bengkel: ${state.profile.name || 'Jaars Garage'}`],
         [`Tanggal: ${now.toLocaleDateString('id-ID')}`],
         [''],
-        ['No', 'No. Nota', 'Jam', 'Nama Pelanggan', 'No. WhatsApp', 'Plat Nomor', 'Kendaraan', 'Layanan yang Dikerjakan', 'Subtotal (Rp)', 'Diskon (Rp)', 'Total Bayar (Rp)', 'Metode Pembayaran', 'Catatan']
+        ['No', 'No. Nota', 'Jam', 'Nama Pelanggan', 'No. WhatsApp', 'Plat Nomor', 'Kendaraan', 'Layanan yang Dikerjakan', 'Subtotal (Rp)', 'Diskon (Rp)', 'Total Bayar (Rp)', 'Metode Pembayaran', 'Status Validasi', 'Catatan']
     ];
 
     allTodayTx.forEach((tx, idx) => {
@@ -4176,6 +5596,8 @@ window.exportTodayPaidServicesToExcel = function() {
         const payStr = tx.paymentMethod === 'cash' ? 'Tunai' :
                        tx.paymentMethod === 'qris' ? 'QRIS' :
                        tx.paymentMethod === 'transfer' ? 'Transfer BRI' : 'Bon / Hutang';
+        const valStr = tx.paymentMethod === 'cash' ? 'Lunas (Kasir)' :
+                       (isTransactionPaymentValidated(tx) ? 'Lunas (Tervalidasi)' : 'Menunggu Validasi (Cek QRIS/Transfer)');
         const jamStr = tx.date ? new Date(tx.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-';
         txRows.push([
             idx + 1,
@@ -4190,6 +5612,7 @@ window.exportTodayPaidServicesToExcel = function() {
             Number(tx.discountAmount) || 0,
             Number(tx.total) || 0,
             payStr,
+            valStr,
             tx.orderNote || '-'
         ]);
     });

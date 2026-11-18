@@ -12,7 +12,8 @@ Aplikasi ini dapat langsung dijalankan di browser tanpa perlu server, serta **10
    - **Pemesanan Layanan Mandiri:** Pengguna atau pelanggan dapat memilih jenis kendaraan (**Sepeda Motor** / **Mobil**), memilih layanan bengkel atau produk ban/oli, mengisi informasi kendaraan (plat nomor, nama pelanggan, nomor WhatsApp, serta catatan rencana waktu kedatangan).
    - **Metode Pembayaran Non-Tunai (Uang Tunai Ditiadakan untuk Pengguna):** Pada sistem pengguna, metode pembayaran dengan **uang tunai (cash)** dan **bon** ditiadakan demi keamanan dan verifikasi pesanan. Pengguna hanya dapat melakukan pembayaran non-tunai melalui **📱 QRIS** (dengan scan langsung / modal perbesar) atau **🏦 Transfer Bank BRI**.
    - **Langsung Terkirim ke WhatsApp Admin JAARS (085156696378):** Ketika pengguna mengklik tombol tunggal *"📅 Konfirmasi Booking Pelayanan"*, sistem langsung memproses pesanan, memunculkan bukti booking, dan seketika membuka WhatsApp menuju nomor resmi Admin JAARS Garage (**085156696378**) lengkap dengan **Kode Booking Resmi** (contoh: `#INV-123456`). Nomor tujuan WhatsApp di bukti booking dikunci permanen (`readonly`) sehingga tidak dapat diubah atau diedit oleh pengguna.
-   - **Kasir POS Lengkap Khusus Admin:** Saat pengelola bengkel login ke mode Admin, tampilan otomatis beralih menjadi kasir meja depan dengan akses penuh ke metode pembayaran **💵 Tunai (Cash)** (lengkap dengan kalkulator uang dan pecahan kembalian) serta **📝 Bon** untuk melayani pelanggan *walk-in* di bengkel.
+   - **Fitur Diskon Ditiadakan pada Booking Pengguna (Hanya di Sistem Admin):** Pada form booking pelayanan sistem pengguna/user, kolom dan opsi pengaturan diskon ditiadakan secara otomatis. Fitur pemberian potongan diskon (baik nominal Rp maupun persentase %) diproteksi penuh dan hanya bisa diakses serta diberikan langsung oleh kasir/pengelola di mode Admin.
+   - **Kasir POS Lengkap Khusus Admin:** Saat pengelola bengkel login ke mode Admin, tampilan otomatis beralih menjadi kasir meja depan dengan akses penuh ke metode pembayaran **💵 Tunai (Cash)** (lengkap dengan kalkulator uang dan pecahan kembalian), fitur **🏷️ Diskon Kasir (Nominal & Persen)**, serta **📝 Bon** untuk melayani pelanggan *walk-in* di bengkel.
 
 2. **🛑 Kontrol Jam Operasional & Tombol Navigasi "Tutup Bengkel":**
    - **Tombol Navigasi di Bar Admin & Menu Pengaturan:** Admin bengkel dapat mengubah status buka/tutup bengkel dengan 1 klik melalui tombol `🔴 Tutup Bengkel` di bar atas maupun di menu Pengaturan Identitas Bengkel (Jam Operasional).
@@ -21,8 +22,34 @@ Aplikasi ini dapat langsung dijalankan di browser tanpa perlu server, serta **10
      - Bar status atas dan kartu Jam Operasional di menu Informasi menampilkan `🔴 BENGKEL SEDANG TUTUP`.
    - **Buka Bengkel Kembali:** Kapan saja bengkel siap beroperasi, admin cukup mengklik `🟢 Buka Bengkel` untuk menormalkan kembali tampilan pengguna secara instan.
 
-3. **📋 Ringkasan Pembayaran Layanan Hari Ini (Khusus Sistem Admin - Tutup Kasir):**
+3. **🚿 Program Loyalitas Cuci Kendaraan (7x Cuci Gratis 1x) & Nota Tersendiri Struk Bukti Penukaran:**
+   - **Pelacakan Stamp Cuci Otomatis (Motor & Mobil):** Sistem secara otomatis melacak setiap kunjungan cuci pelanggan berdasarkan **Nomor Plat Kendaraan** atau **Nomor WhatsApp**. Setiap kali pelanggan mencuci motor atau mobil, sistem menambahkan akumulasi stamp (1 s.d 7 stamp).
+   - **Struk Bukti Penukaran Pelayanan Cuci Gratis (Nota Tersendiri):**
+     - Dibuatkan nota struk bukti penukaran tersendiri berstandar cetak thermal kasir (58mm/80mm) yang terpisah dari nota transaksi reguler.
+     - **Header Resmi & Kode Kupon:** Memuat identitas Bengkel JAARS Garage, judul resmi *"STRUK BUKTI PENUKARAN CUCI GRATIS"*, serta **Kode Kupon Unik** (misal: `#FREE-CUCI-202611-ABCD`).
+     - **Identitas Kendaraan & Pelanggan:** Menampilkan nomor polisi kendaraan dalam bingkai tebal, nama pelanggan, jenis kendaraan (Motor/Mobil), nomor WhatsApp, tanggal penerbitan, dan masa berlaku voucher (30 hari).
+     - **Visual Bar 7-Stamp Verifikasi:** Menampilkan deretan 7 stamp terverifikasi `[✅ Cuci 1] [✅ Cuci 2] [✅ Cuci 3] [✅ Cuci 4] [✅ Cuci 5] [✅ Cuci 6] [🎁 KE-7: GRATIS]`.
+     - **Rincian Layanan & Nilai Hadiah:** 1x Pelayanan Cuci Kendaraan (Snow Wash & Semir Ban) senilai normal Rp 15.000 (motor) / Rp 40.000 (mobil) dengan diskon loyalitas 100% sehingga **TOTAL BAYAR: RP 0 (GRATIS)**.
+     - **Ketentuan Penukaran & Tanda Tangan:** Syarat penukaran resmi dan kolom tanda tangan Kasir JAARS Garage bersama Pelanggan.
+   - **3 Tombol Aksi Cepat pada Struk:**
+     - **🖨️ Cetak Struk Thermal:** Mencetak struk fisik bukti penukaran ke printer kasir bluetooth/USB.
+     - **💬 Kirim WA:** Mengirimkan pesan konfirmasi WhatsApp ucapan selamat, rincian kupon, masa berlaku, dan panduan klaim ke kontak pelanggan.
+     - **🎁 Klaim ke Kasir:** Seketika menginputkan 1x layanan cuci gratis Rp 0 ke antrean kasir aktif dan otomatis menandai kupon sebagai tertebus (*redeemed*) setelah transaksi disimpan.
+   - **Pusat Kelola Loyalitas Khusus Sistem Admin:**
+     - **Tombol Navigasi Atas:** Tombol `🚿 Cuci 7x Gratis 1x` di bar admin dilengkapi badge counter jumlah pelanggan yang telah mencapai ≥7x cuci.
+     - **Banner Ringkasan Pembayaran:** Banner informatif di menu *Ringkasan Pembayaran* hari ini untuk memantau pelanggan yang berhak atas cuci gratis.
+     - **Pencarian Cepat:** Cek stamp pelanggan langsung hanya dengan mengetikkan plat nomor atau nomor WhatsApp.
+     - **Tabel Pelanggan & Riwayat Kupon:** Memuat seluruh daftar pelanggan cuci dengan progres stamp dan riwayat kupon yang pernah diterbitkan.
+     - **Penerbitan Struk Manual:** Fitur bagi admin untuk menerbitkan struk penukaran gratis secara khusus kapan saja.
+     - **Notifikasi Checkout Otomatis:** Saat transaksi kasir ke-7 selesai diproses, sistem otomatis memunculkan konfirmasi untuk langsung menerbitkan dan mencetak struk cuci gratis.
+     - **Indikator Real-Time di Form Kasir:** Indikator visual stamp dinamis muncul seketika saat kasir mengetik nomor plat atau memilih layanan cuci.
+
+4. **📋 Ringkasan Pembayaran Layanan Hari Ini (Khusus Sistem Admin - Tutup Kasir):**
    - **Fokus Khusus Hari Ini (Real-Time Settlement):** Hanya menampilkan pembayaran dan transaksi layanan yang selesai dikerjakan **pada hari ini saja**, membedakannya secara tegas dengan menu arsip jangka panjang *Laporan & Riwayat*.
+   - **🔍 Navigasi & Kontrol Validasi Pembayaran Digital (QRIS & Transfer Bank):** Dilengkapi tombol navigasi cepat untuk memeriksa status pembayaran non-tunai (QRIS & Transfer Bank BRI) secara real-time:
+     - **Tombol Navigasi Status:** `Semua Transaksi`, `⏳ Menunggu Cek QRIS/Transfer` (lengkap dengan badge counter transaksi yang belum dicek), `✅ Sudah Divalidasi / Lunas`, `📱 Khusus QRIS`, dan `🏦 Khusus Transfer BRI`.
+     - **Alert Status Mutasi:** Banner notifikasi otomatis yang mengingatkan kasir/admin jika ada transaksi digital yang belum dicek mutasinya sebelum kendaraan keluar bengkel.
+     - **Tombol Aksi Validasi Interaktif:** Tombol `✅ Validasi Lunas (Uang Masuk)` dan `↩️ Batalkan Validasi` pada setiap kartu transaksi serta tombol massal `✅ Validasi Semua Lunas Hari Ini`.
    - **Rekapitulasi Pembayaran Berdasarkan Setiap Layanan Hari Ini:** Tabel agregasi detail yang merangkum setiap jenis layanan/produk yang dikerjakan hari ini, jumlah unit/qty pengerjaan, tarif satuan, rincian pembayaran (Tunai, QRIS, BRI, Bon), dan total penerimaan uang per layanan.
    - **Rincian Setiap Nota Transaksi Hari Ini:** Setiap nota pelanggan yang dibayar hari ini memuat tabel layanan detail lengkap (nama layanan, qty, tarif satuan, subtotal), jam transaksi, plat nomor, pelanggan, tombol cetak nota, dan kirim nota WhatsApp.
    - **4 KPI Finansial Hari Ini:** Total Pembayaran Masuk Hari Ini, Jumlah Transaksi Hari Ini, Total Layanan Selesai Hari Ini, dan Total Diskon Hari Ini.
