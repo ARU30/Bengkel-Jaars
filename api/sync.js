@@ -293,16 +293,44 @@ module.exports = async function handler(req, res) {
 
             const existingData = (await getData()) || {};
 
-            // Simpan dan gabungkan seluruh ID transaksi & katalog yang pernah dihapus
+            const isSenderAdmin = Boolean(payload.isAdmin);
             const existingDeleted = Array.isArray(existingData.deletedTransactionIds) ? existingData.deletedTransactionIds : [];
             const incomingDeleted = Array.isArray(payload.deletedTransactionIds) ? payload.deletedTransactionIds : [];
             const allDeletedIds = Array.from(new Set([...existingDeleted, ...incomingDeleted]));
 
-            const existingDeletedCat = Array.isArray(existingData.deletedCatalogIds) ? existingData.deletedCatalogIds : [];
-            const incomingDeletedCat = Array.isArray(payload.deletedCatalogIds) ? payload.deletedCatalogIds : [];
-            const allDeletedCatIds = Array.from(new Set([...existingDeletedCat, ...incomingDeletedCat]));
+            // Penggabungan Katalog & Tarif Layanan:
+            // Hanya Admin yang berhak memperbarui Master Data (Katalog, Tarif, Profil).
+            // Pelanggan/User biasa HANYA boleh mengirim transaksi (nota/booking) baru.
+            let mergedCatalog = existingData.catalog || [];
+            let allDeletedCatIds = existingData.deletedCatalogIds || [];
+            let updatedServices = existingData.services || [];
+            let updatedProfile = existingData.profile || {};
 
-            // Gabungkan data agar transaksi & katalog antar-device tidak saling menimpa
+            if (isSenderAdmin || !existingData.catalog || existingData.catalog.length === 0) {
+                const existingDeletedCat = Array.isArray(existingData.deletedCatalogIds) ? existingData.deletedCatalogIds : [];
+                const incomingDeletedCat = Array.isArray(payload.deletedCatalogIds) ? payload.deletedCatalogIds : [];
+                allDeletedCatIds = Array.from(new Set([...existingDeletedCat, ...incomingDeletedCat]));
+
+                mergedCatalog = mergeCatalog(
+                    existingData.catalog,
+                    payload.catalog,
+                    allDeletedCatIds
+                );
+            }
+
+            if (isSenderAdmin || !existingData.services || existingData.services.length === 0) {
+                if (Array.isArray(payload.services) && payload.services.length > 0) {
+                    updatedServices = payload.services;
+                }
+            }
+
+            if (isSenderAdmin || !existingData.profile) {
+                if (payload.profile) {
+                    updatedProfile = { ...(existingData.profile || {}), ...payload.profile };
+                }
+            }
+
+            // Gabungkan transaksi dari semua perangkat (baik kasir admin maupun booking pelanggan)
             const mergedTransactions = mergeTransactions(
                 existingData.transactions,
                 payload.transactions,
@@ -320,25 +348,18 @@ module.exports = async function handler(req, res) {
                 payload.loyaltyClearedVehicles
             );
 
-            const mergedCatalog = mergeCatalog(
-                existingData.catalog,
-                payload.catalog,
-                allDeletedCatIds
-            );
-
             const mergedPayload = {
                 ...existingData,
-                ...payload,
-                profile: payload.profile ? { ...(existingData.profile || {}), ...payload.profile } : existingData.profile,
-                services: (Array.isArray(payload.services) && payload.services.length > 0) ? payload.services : (existingData.services || []),
+                profile: updatedProfile,
+                services: updatedServices,
                 catalog: mergedCatalog.length > 0 ? mergedCatalog : (existingData.catalog || []),
                 transactions: mergedTransactions,
                 deletedTransactionIds: allDeletedIds,
                 deletedCatalogIds: allDeletedCatIds,
                 freeWashVouchers: mergedVouchers,
                 loyaltyClearedVehicles: mergedClearedVehicles,
-                adminEmail: payload.adminEmail || existingData.adminEmail,
-                adminPassword: payload.adminPassword || existingData.adminPassword,
+                adminEmail: isSenderAdmin ? (payload.adminEmail || existingData.adminEmail) : existingData.adminEmail,
+                adminPassword: isSenderAdmin ? (payload.adminPassword || existingData.adminPassword) : existingData.adminPassword,
                 updatedAt: Date.now()
             };
 

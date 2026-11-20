@@ -843,11 +843,21 @@ function initCloudSync() {
 }
 
 function generateSyncSharePayload() {
+    // Optimalkan produk katalog agar link URL tidak terlalu panjang (hindari base64 raksasa di URL hash)
+    const lightweightCatalog = (state.catalog || []).map(item => {
+        if (!item) return item;
+        const copy = { ...item };
+        if (copy.image && copy.image.startsWith('data:image') && copy.image.length > 300) {
+            delete copy.image; // Gunakan fallback gambar bawaan di perangkat penerima
+        }
+        return copy;
+    });
+
     const payload = {
         updatedAt: Date.now(),
         profile: state.profile,
         services: state.services,
-        catalog: state.catalog,
+        catalog: lightweightCatalog,
         adminEmail: state.adminEmail || DEFAULT_ADMIN.email,
         adminPassword: state.adminPassword || DEFAULT_ADMIN.password
     };
