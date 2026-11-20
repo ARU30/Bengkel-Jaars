@@ -5,6 +5,29 @@
     --accent-amber: #d97706;
 }
 
+/* Website Background: JAARS Garage & Cuci Kendaraan Theme */
+body.workshop-theme-bg,
+body {
+    background-color: #0c1527;
+    background-image: 
+        radial-gradient(circle at 12% 18%, rgba(14, 165, 233, 0.18), transparent 45%),
+        radial-gradient(circle at 88% 82%, rgba(245, 158, 11, 0.12), transparent 40%),
+        linear-gradient(180deg, rgba(12, 21, 39, 0.85) 0%, rgba(15, 23, 42, 0.88) 100%),
+        url('../img/bg-workshop.jpg');
+    background-size: cover;
+    background-position: center top;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    min-height: 100vh;
+}
+
+@media (max-width: 768px) {
+    body.workshop-theme-bg,
+    body {
+        background-attachment: scroll;
+    }
+}
+
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
     width: 6px;

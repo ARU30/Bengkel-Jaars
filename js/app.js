@@ -1533,6 +1533,89 @@ function renderAll() {
 }
 
 // --- WORKSHOP HEADER & PROFILE ---
+function formatSocialUrl(platform, value) {
+    if (!value) return '';
+    let val = String(value).trim();
+    if (!val) return '';
+    if (val.startsWith('http://') || val.startsWith('https://')) {
+        return val;
+    }
+    val = val.replace(/^@+/, '');
+    if (platform === 'instagram') {
+        return `https://www.instagram.com/${val}`;
+    }
+    if (platform === 'tiktok') {
+        return `https://www.tiktok.com/@${val}`;
+    }
+    return val;
+}
+
+function renderSocialNavigation() {
+    const profile = state.profile || DEFAULT_PROFILE;
+    const igRaw = profile.instagram || DEFAULT_PROFILE.instagram || '';
+    const ttRaw = profile.tiktok || DEFAULT_PROFILE.tiktok || '';
+
+    const igUrl = formatSocialUrl('instagram', igRaw);
+    const ttUrl = formatSocialUrl('tiktok', ttRaw);
+
+    // 1. Update Footer Link Sosial Media (Bawah Website)
+    const footerIg = document.getElementById('footer-social-instagram');
+    const footerTt = document.getElementById('footer-social-tiktok');
+    const footerDivider = document.getElementById('footer-social-divider');
+
+    if (footerIg) {
+        if (igUrl) {
+            footerIg.href = igUrl;
+            footerIg.classList.remove('hidden');
+            footerIg.classList.add('inline-flex');
+        } else {
+            footerIg.classList.add('hidden');
+            footerIg.classList.remove('inline-flex');
+        }
+    }
+
+    if (footerTt) {
+        if (ttUrl) {
+            footerTt.href = ttUrl;
+            footerTt.classList.remove('hidden');
+            footerTt.classList.add('inline-flex');
+        } else {
+            footerTt.classList.add('hidden');
+            footerTt.classList.remove('inline-flex');
+        }
+    }
+
+    if (footerDivider) {
+        if (igUrl || ttUrl) {
+            footerDivider.classList.remove('hidden');
+        } else {
+            footerDivider.classList.add('hidden');
+        }
+    }
+
+    // 2. Update Link & Teks Handle di Panel "Info & Kontak"
+    const infoIgLink = document.getElementById('info-link-instagram');
+    const infoTtLink = document.getElementById('info-link-tiktok');
+    const infoIgHandle = document.getElementById('info-handle-instagram');
+    const infoTtHandle = document.getElementById('info-handle-tiktok');
+
+    if (infoIgLink) {
+        infoIgLink.href = igUrl || '#';
+    }
+    if (infoIgHandle) {
+        const handle = igRaw ? (igRaw.startsWith('http') ? '@' + igRaw.split('/').filter(Boolean).pop() : (igRaw.startsWith('@') ? igRaw : '@' + igRaw)) : '@jaarsgarage';
+        infoIgHandle.textContent = handle;
+    }
+
+    if (infoTtLink) {
+        infoTtLink.href = ttUrl || '#';
+    }
+    if (infoTtHandle) {
+        const handle = ttRaw ? (ttRaw.startsWith('http') ? (ttRaw.includes('/@') ? '@' + ttRaw.split('/@')[1] : '@' + ttRaw.split('/').filter(Boolean).pop()) : (ttRaw.startsWith('@') ? ttRaw : '@' + ttRaw)) : '@jaarsgarage';
+        infoTtHandle.textContent = handle;
+    }
+}
+
 function renderWorkshopHeader() {
     const nameEl = document.getElementById('header-bengkel-name');
     const taglineEl = document.getElementById('header-bengkel-tagline');
@@ -1543,9 +1626,14 @@ function renderWorkshopHeader() {
     if (nameEl) nameEl.textContent = state.profile.name;
     if (taglineEl) taglineEl.textContent = state.profile.tagline;
     if (phoneEl) phoneEl.textContent = state.profile.phone;
-    if (footerNameEl) footerNameEl.textContent = state.profile.name;
+    if (footerNameEl) {
+        // Hilangkan tulisan (Jaars Garage) di footer bawah website agar rapi berdampingan dengan hak cipta
+        const cleanFooterName = (state.profile.name || '').replace(/\s*\([^)]*Jaars Garage[^)]*\)/gi, '').trim() || 'Bengkel Ban & Cuci Kendaraan';
+        footerNameEl.textContent = cleanFooterName;
+    }
     if (footerHoursEl) footerHoursEl.textContent = 'Buka: ' + (state.profile.operatingHours || DEFAULT_PROFILE.operatingHours || '08.00 - 21.00 WIB');
 
+    renderSocialNavigation();
     renderInfoPanel();
 }
 
@@ -1555,6 +1643,8 @@ function renderProfileForm() {
     const fPhone = document.getElementById('settings-phone');
     const fEmail = document.getElementById('settings-email');
     const fAddress = document.getElementById('settings-address');
+    const fInstagram = document.getElementById('settings-instagram');
+    const fTiktok = document.getElementById('settings-tiktok');
     const fHours = document.getElementById('settings-operating-hours');
     const fFooter = document.getElementById('settings-receipt-footer');
     const fBankName = document.getElementById('settings-bank-name');
@@ -1567,6 +1657,8 @@ function renderProfileForm() {
     if (fPhone) fPhone.value = state.profile.phone || '';
     if (fEmail) fEmail.value = state.profile.email || DEFAULT_PROFILE.email || '';
     if (fAddress) fAddress.value = state.profile.address || '';
+    if (fInstagram) fInstagram.value = state.profile.instagram || DEFAULT_PROFILE.instagram || '';
+    if (fTiktok) fTiktok.value = state.profile.tiktok || DEFAULT_PROFILE.tiktok || '';
     if (fHours) fHours.value = state.profile.operatingHours || DEFAULT_PROFILE.operatingHours || '';
     if (fClosedReason) fClosedReason.value = state.profile.closedReason || '';
     if (fFooter) fFooter.value = state.profile.receiptFooter || '';
@@ -1589,6 +1681,8 @@ function handleSaveProfile(e) {
         phone: document.getElementById('settings-phone').value.trim(),
         email: document.getElementById('settings-email')?.value.trim() || DEFAULT_PROFILE.email,
         address: document.getElementById('settings-address').value.trim(),
+        instagram: document.getElementById('settings-instagram')?.value.trim() || state.profile.instagram || DEFAULT_PROFILE.instagram || '',
+        tiktok: document.getElementById('settings-tiktok')?.value.trim() || state.profile.tiktok || DEFAULT_PROFILE.tiktok || '',
         operatingHours: document.getElementById('settings-operating-hours')?.value.trim() || DEFAULT_PROFILE.operatingHours,
         closedReason: document.getElementById('settings-closed-reason')?.value.trim() || (state.profile.closedReason || ''),
         receiptFooter: document.getElementById('settings-receipt-footer').value.trim(),
@@ -1598,10 +1692,11 @@ function handleSaveProfile(e) {
     };
     saveProfile();
     renderWorkshopHeader();
+    renderSocialNavigation();
     renderInfoPanel();
     renderPaymentSections();
     renderShopStatus();
-    showToast('Profil bengkel & data pembayaran berhasil disimpan!');
+    showToast('Profil bengkel berhasil disimpan!');
 }
 
 // --- HELPER CLIPBOARD & STATUS OPERASIONAL ---
@@ -1939,6 +2034,8 @@ function renderInfoPanel() {
         const mailSubject = encodeURIComponent(`Pertanyaan Layanan - ${name}`);
         linkEmail.href = email ? `mailto:${email}?subject=${mailSubject}` : '#';
     }
+
+    renderSocialNavigation();
 }
 
 // --- PAYMENT SECTIONS & QRIS / TRANSFER DISPLAY ---
@@ -2739,6 +2836,27 @@ function updateAdminUI() {
         if (discountWrapper) discountWrapper.classList.remove('hidden');
         if (discountRow) discountRow.classList.remove('hidden');
 
+        // Tampilkan Tombol Navigasi Edit Akun Sosial Media Khusus Mode Admin
+        const btnAdminEditSocial = document.getElementById('btn-admin-edit-social');
+        const footerAdminEditSocial = document.getElementById('footer-admin-edit-social');
+        if (btnAdminEditSocial) {
+            btnAdminEditSocial.classList.remove('hidden');
+            btnAdminEditSocial.classList.add('flex');
+        }
+        if (footerAdminEditSocial) {
+            footerAdminEditSocial.classList.remove('hidden');
+            footerAdminEditSocial.classList.add('inline-flex');
+        }
+
+        // Tampilkan Tombol Item Bebas / Tambahan Khusus Mode Admin
+        const btnAddCustomItem = document.getElementById('btn-add-custom-item');
+        const wrapperAddCustomItem = document.getElementById('wrapper-add-custom-item');
+        if (wrapperAddCustomItem) wrapperAddCustomItem.classList.remove('hidden');
+        if (btnAddCustomItem) {
+            btnAddCustomItem.classList.remove('hidden');
+            btnAddCustomItem.classList.add('flex');
+        }
+
         if (navPosIcon) navPosIcon.textContent = '📅';
         if (navPosLabel) navPosLabel.innerHTML = '<span class="hidden md:inline">Booking</span> Pelayanan';
         if (cartPanelTitle) cartPanelTitle.textContent = '🧮 Nota Kasir & Booking';
@@ -2762,6 +2880,27 @@ function updateAdminUI() {
         }
         if (summaryAdminBadge) summaryAdminBadge.classList.add('hidden');
         if (posHeaderStatusText) posHeaderStatusText.textContent = 'Booking Pelayanan Online Bengkel JAARS';
+
+        // Sembunyikan Tombol Edit Akun Sosial Media di Sistem Pengguna/User (Hanya untuk Admin)
+        const btnAdminEditSocial = document.getElementById('btn-admin-edit-social');
+        const footerAdminEditSocial = document.getElementById('footer-admin-edit-social');
+        if (btnAdminEditSocial) {
+            btnAdminEditSocial.classList.add('hidden');
+            btnAdminEditSocial.classList.remove('flex');
+        }
+        if (footerAdminEditSocial) {
+            footerAdminEditSocial.classList.add('hidden');
+            footerAdminEditSocial.classList.remove('inline-flex');
+        }
+
+        // Sembunyikan Tombol Item Bebas / Tambahan di Sistem Pengguna/User (Hanya untuk Admin)
+        const btnAddCustomItem = document.getElementById('btn-add-custom-item');
+        const wrapperAddCustomItem = document.getElementById('wrapper-add-custom-item');
+        if (wrapperAddCustomItem) wrapperAddCustomItem.classList.add('hidden');
+        if (btnAddCustomItem) {
+            btnAddCustomItem.classList.add('hidden');
+            btnAddCustomItem.classList.remove('flex');
+        }
 
         // Hapus & Sembunyikan Pembayaran Uang Tunai & Bon di Sistem Pengguna/User
         if (cashWrapper) cashWrapper.classList.add('hidden');
@@ -2919,6 +3058,64 @@ function handleSaveAdminAccount(e) {
     triggerAutoSyncToCloud('Akun Admin');
     showToast('Kredensial email & password admin berhasil diperbarui!');
 }
+
+// --- MODAL & HANDLER EDIT SOSIAL MEDIA (KHUSUS MODE ADMIN) ---
+function openEditSocialModal() {
+    if (!state.isAdmin) {
+        showToast('Akses ditolak: Menu ini khusus untuk Mode Admin!', 'error');
+        if (typeof openAdminLoginModal === 'function') openAdminLoginModal();
+        return;
+    }
+    const modal = document.getElementById('modal-edit-social');
+    const igInput = document.getElementById('quick-edit-instagram');
+    const ttInput = document.getElementById('quick-edit-tiktok');
+    if (!modal) return;
+
+    const currentProfile = state.profile || DEFAULT_PROFILE;
+    if (igInput) igInput.value = currentProfile.instagram || DEFAULT_PROFILE.instagram || '';
+    if (ttInput) ttInput.value = currentProfile.tiktok || DEFAULT_PROFILE.tiktok || '';
+
+    modal.classList.remove('hidden');
+    state.activeModal = 'modal-edit-social';
+    setTimeout(() => {
+        if (igInput) {
+            igInput.focus();
+            igInput.select();
+        }
+    }, 150);
+}
+window.openEditSocialModal = openEditSocialModal;
+
+function handleQuickSaveSocial(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!state.isAdmin) {
+        showToast('Akses ditolak: Hanya admin yang dapat mengubah akun sosial media!', 'error');
+        return;
+    }
+
+    const igInput = document.getElementById('quick-edit-instagram');
+    const ttInput = document.getElementById('quick-edit-tiktok');
+
+    const newIg = (igInput ? igInput.value : '').trim();
+    const newTt = (ttInput ? ttInput.value : '').trim();
+
+    state.profile = {
+        ...(state.profile || DEFAULT_PROFILE),
+        instagram: newIg,
+        tiktok: newTt
+    };
+
+    saveProfile();
+    renderWorkshopHeader();
+    renderSocialNavigation();
+    renderInfoPanel();
+    if (typeof renderProfileForm === 'function') renderProfileForm();
+    if (typeof syncToCloud === 'function') syncToCloud();
+
+    closeModal();
+    showToast('Akun Instagram & TikTok berhasil diperbarui!');
+}
+window.handleQuickSaveSocial = handleQuickSaveSocial;
 
 // --- TAB SWITCHER ---
 function switchTab(tabId) {
@@ -3310,6 +3507,11 @@ function renderCartTotalsOnly() {
 
 // --- CUSTOM ITEM MODAL (ON-THE-FLY) ---
 function openCustomItemModal() {
+    if (!state.isAdmin) {
+        showToast('Akses ditolak: Menu Item Bebas hanya untuk Kasir Admin!', 'error');
+        if (typeof openAdminLoginModal === 'function') openAdminLoginModal();
+        return;
+    }
     state.activeModal = 'customItem';
     const modal = document.getElementById('modal-custom-item');
     if (modal) modal.classList.remove('hidden');
@@ -3317,6 +3519,10 @@ function openCustomItemModal() {
 
 function handleAddCustomItem(e) {
     e.preventDefault();
+    if (!state.isAdmin) {
+        showToast('Akses ditolak: Hanya admin yang dapat menambah item bebas!', 'error');
+        return;
+    }
     const name = document.getElementById('custom-item-name').value.trim();
     const price = Number(document.getElementById('custom-item-price').value) || 0;
     const qty = Number(document.getElementById('custom-item-qty').value) || 1;

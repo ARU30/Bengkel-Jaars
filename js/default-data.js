@@ -15,7 +15,9 @@ const DEFAULT_PROFILE = {
     "bankHolder": "JABANG ARU SAPUTRO",
     "qrisImage": "img/qris.jpeg",
     "isStoreClosed": false,
-    "closedReason": ""
+    "closedReason": "",
+    "instagram": "https://www.instagram.com/jaarsgarage",
+    "tiktok": "https://www.tiktok.com/@jaarsgarage"
 };
 
 const DEFAULT_ADMIN = {
