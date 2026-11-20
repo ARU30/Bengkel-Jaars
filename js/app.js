@@ -1561,7 +1561,6 @@ function renderSocialNavigation() {
     // 1. Update Footer Link Sosial Media (Bawah Website)
     const footerIg = document.getElementById('footer-social-instagram');
     const footerTt = document.getElementById('footer-social-tiktok');
-    const footerDivider = document.getElementById('footer-social-divider');
 
     if (footerIg) {
         if (igUrl) {
@@ -1582,14 +1581,6 @@ function renderSocialNavigation() {
         } else {
             footerTt.classList.add('hidden');
             footerTt.classList.remove('inline-flex');
-        }
-    }
-
-    if (footerDivider) {
-        if (igUrl || ttUrl) {
-            footerDivider.classList.remove('hidden');
-        } else {
-            footerDivider.classList.add('hidden');
         }
     }
 
